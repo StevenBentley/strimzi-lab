@@ -1,6 +1,6 @@
 RELEASE_VERSION ?= latest
 
-SUBDIRS=taxi-consumer taxi-producer
+SUBDIRS=trip-producer taxi-producer
 DOCKER_TARGETS=docker_build docker_push docker_tag
 
 all: $(SUBDIRS)

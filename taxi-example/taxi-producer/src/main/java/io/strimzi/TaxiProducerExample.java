@@ -1,7 +1,8 @@
 package io.strimzi;
 
-import org.apache.kafka.clients.producer.KafkaProducer;
-import org.apache.kafka.clients.producer.ProducerRecord;
+import io.vertx.core.Vertx;
+import io.vertx.kafka.client.producer.KafkaProducer;
+import io.vertx.kafka.client.producer.KafkaProducerRecord;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -15,22 +16,26 @@ public class TaxiProducerExample {
     private static final Logger log = LoggerFactory.getLogger(TaxiProducerExample.class);
 
     public static void main(String[] args) {
-        log.info("Start..");
         TaxiProducerConfig config = TaxiProducerConfig.fromEnv();
         Properties props = TaxiProducerConfig.createProperties(config);
 
-        try (BufferedReader taxiIn = new BufferedReader(new FileReader(args[0]));
-             KafkaProducer producer = new KafkaProducer(props)) {
+        Vertx vertx = Vertx.vertx();
+
+        try (BufferedReader taxiIn = new BufferedReader(new FileReader(args[0]))) {
+            KafkaProducer<String,String> producer = KafkaProducer.create(vertx, props);
+
             log.info("Sending data ...");
             while (taxiIn.ready()) {
-                producer.send(new ProducerRecord(config.getTopic(), taxiIn.readLine()));
+                producer.write(KafkaProducerRecord.create(config.getTopic(), taxiIn.readLine()));
                 Thread.sleep(1000);
             }
+
+            producer.close();
             log.info("All data sent ...");
         } catch (FileNotFoundException e) {
             log.error("Invalid / No data file provided.. {}", e.getMessage());
             e.printStackTrace();
-        } catch (IOException e) {
+        }  catch (IOException e) {
             log.error("IO error occurred reading from file.. {}", args[0]);
             e.printStackTrace();
         } catch (InterruptedException e) {

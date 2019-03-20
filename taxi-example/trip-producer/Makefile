@@ -1,4 +1,4 @@
-PROJECT_NAME=taxi-consumer
+PROJECT_NAME=trip-producer
 
 all: java_build docker_build docker_push
 build: java_build

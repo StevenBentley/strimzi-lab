@@ -9,7 +9,7 @@
     </parent>
     <modelVersion>4.0.0</modelVersion>
 
-    <artifactId>taxi-consumer</artifactId>
+    <artifactId>trip-producer</artifactId>
 
     <dependencies>
         <dependency>
@@ -44,7 +44,7 @@
                         <configuration>
                             <transformers>
                                 <transformer implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
-                                    <mainClass>io.strimzi.TaxiConsumerExample</mainClass>
+                                    <mainClass>io.strimzi.TripProducerExample</mainClass>
                                 </transformer>
                             </transformers>
                         </configuration>

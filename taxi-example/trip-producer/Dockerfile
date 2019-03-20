@@ -10,6 +10,6 @@ ENV VERSION ${version}
 
 COPY ./scripts/ /bin
 
-ADD target/taxi-consumer-1.0-SNAPSHOT.jar /
+ADD target/trip-producer-1.0-SNAPSHOT.jar /
 
-CMD ["/bin/run.sh", "/taxi-consumer-1.0-SNAPSHOT.jar"]
+CMD ["/bin/run.sh", "/trip-producer-1.0-SNAPSHOT.jar"]
