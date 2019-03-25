@@ -11,13 +11,15 @@
 
     <modules>
         <module>taxi-producer</module>
-        <module>trip-producer</module>
+        <module>trip-convert-app</module>
+        <module>trip-metrics-app</module>
+        <module>consumer-app</module>
     </modules>
 
     <properties>
         <maven.compiler.source>1.8</maven.compiler.source>
         <maven.compiler.target>1.8</maven.compiler.target>
-        <kafka.version>2.0.10</kafka.version>
+        <kafka.version>1.0.1</kafka.version>
         <vertx.version>3.5.1</vertx.version>
         <slf4j.version>1.7.25</slf4j.version>
     </properties>

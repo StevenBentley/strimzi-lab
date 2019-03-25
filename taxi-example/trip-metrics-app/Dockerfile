@@ -10,6 +10,6 @@ ENV VERSION ${version}
 
 COPY ./scripts/ /bin
 
-ADD target/trip-producer-1.0-SNAPSHOT.jar /
+ADD target/trip-metrics-app-1.0-SNAPSHOT.jar /
 
-CMD ["/bin/run.sh", "/trip-producer-1.0-SNAPSHOT.jar"]
+CMD ["/bin/run.sh", "/trip-metrics-app-1.0-SNAPSHOT.jar"]

@@ -3,9 +3,10 @@ package io.strimzi.trip;
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonProperty;
 
+import java.io.Serializable;
 import java.util.Date;
 
-public class Trip {
+public class Trip implements Serializable {
     private String medallion;
     private String hackLicense;
     private Date pickupDatetime;

@@ -1,4 +1,4 @@
-PROJECT_NAME=trip-producer
+PROJECT_NAME=trip-convert-app
 
 all: java_build docker_build docker_push
 build: java_build

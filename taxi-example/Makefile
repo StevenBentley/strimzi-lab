@@ -1,6 +1,6 @@
 RELEASE_VERSION ?= latest
 
-SUBDIRS=trip-producer taxi-producer
+SUBDIRS=taxi-producer trip-convert-app trip-metrics-app
 DOCKER_TARGETS=docker_build docker_push docker_tag
 
 all: $(SUBDIRS)

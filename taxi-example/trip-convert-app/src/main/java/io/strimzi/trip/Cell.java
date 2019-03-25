@@ -3,9 +3,10 @@ package io.strimzi.trip;
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonProperty;
 
+import java.io.Serializable;
 import java.util.Objects;
 
-public class Cell {
+public class Cell implements Serializable {
     private int clat;
     private int clong;
 

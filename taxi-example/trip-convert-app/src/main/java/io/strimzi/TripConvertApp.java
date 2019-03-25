@@ -1,27 +1,37 @@
 package io.strimzi;
 
-import io.strimzi.trip.*;
-import io.vertx.core.Vertx;
-import io.vertx.core.json.JsonObject;
-import io.vertx.kafka.client.common.TopicPartition;
-import io.vertx.kafka.client.consumer.KafkaConsumer;
-import io.vertx.kafka.client.producer.KafkaProducer;
-import io.vertx.kafka.client.producer.KafkaProducerRecord;
+import io.strimzi.trip.Cell;
+import io.strimzi.trip.Location;
+import io.strimzi.trip.Trip;
+import io.strimzi.trip.TripFields;
+import io.strimzi.json.JsonObjectSerde;
+import org.apache.kafka.common.serialization.Serdes;
+import org.apache.kafka.streams.Consumed;
+import org.apache.kafka.streams.KafkaStreams;
+import org.apache.kafka.streams.KeyValue;
+import org.apache.kafka.streams.StreamsBuilder;
+import org.apache.kafka.streams.kstream.KStream;
+import org.apache.kafka.streams.kstream.Produced;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.text.ParseException;
 import java.text.SimpleDateFormat;
-import java.util.*;
+import java.util.Date;
+import java.util.EnumMap;
+import java.util.Map;
+import java.util.Properties;
+import java.util.concurrent.CountDownLatch;
 
 
-public class TripProducerExample {
-    private static final Logger log = LoggerFactory.getLogger(TripProducerExample.class);
+public class TripConvertApp {
+    private static final Logger log = LoggerFactory.getLogger(TripConvertApp.class);
     private static final Map<TripFields,Integer> fieldsMap = TaxiFieldsMap();
-    private static Set<TopicPartition> assignedTopicPartitions;
+//    private static Set<TopicPartition> assignedTopicPartitions;
 
     private static final Location START_CELL_CENTRE = new Location(41.474937, -74.913585);
-    private static final Double CELL_SIZE_MILES = 0.310685596118667; // 500 metres in miles
+    private static final int CELL_SIZE_METRES = 500;
+    private static final Double CELL_SIZE_MILES = CELL_SIZE_METRES / 1609.344; // 500 metres in miles
     private static final Double CELL_LAT_LENGTH = 2 * (CELL_SIZE_MILES / 69);
     private static final Double CELL_LONG_LENGTH = 2 * (CELL_LAT_LENGTH / Math.cos(START_CELL_CENTRE.getLatitude()));
     private static final Location START_CELL_ORIGIN = startCellOrigin(); // Coordinates of top-left corner of cell 1.1
@@ -31,42 +41,46 @@ public class TripProducerExample {
     private static final int MAX_CLONG = 300;   // max longitude grid size
 
     public static void main(String[] args) {
-        TripProducerConfig config = TripProducerConfig.fromEnv();
-        Properties consumerProp = TripProducerConfig.createConsumerProperties(config);
-        Properties producerProp = TripProducerConfig.createProducerProperties(config);
+        TripConvertConfig config = TripConvertConfig.fromEnv();
+        Properties props = TripConvertConfig.createProperties(config);
 
-        Vertx vertx = Vertx.vertx();
+        final JsonObjectSerde<Cell> cellSerde = new JsonObjectSerde<>(Cell.class);
+        final JsonObjectSerde<Trip> tripSerde = new JsonObjectSerde<>(Trip.class);
 
-        KafkaConsumer<String, String> consumer = KafkaConsumer.create(vertx, consumerProp, String.class, String.class);
-        KafkaProducer<JsonObject, JsonObject> producer = KafkaProducer.create(vertx, producerProp, JsonObject.class, JsonObject.class);
+        StreamsBuilder builder = new StreamsBuilder();
+        KStream<String, String> source = builder.stream(config.getSourceTopic(), Consumed.with(Serdes.String(), Serdes.String()));
+        KStream<Cell, Trip> mapped = source
+                .map((key, value) -> {
+                    Trip trip = getTripFromString(value);
+                    log.info("Received message:");
+                    log.info("\tkey: {}", key == null ? "null" : key);
+                    log.info("\tvalue: {}", value);
+                    return new KeyValue<>(new Cell(START_CELL_ORIGIN, CELL_LENGTH, trip.getPickupLoc()),trip);
+                })
+                .filter((cell, trip) -> cell.inBounds(MAX_CLAT, MAX_CLONG));
+        mapped.to(config.getSinkTopic(), Produced.with(cellSerde, tripSerde));
 
-        consumer.handler(record -> {
-            log.info("Received on topic={}, partition={}, offset={}, key={}, value={}",
-                    record.topic(), record.partition(), record.offset(), record.key(), record.value());
-            log.info("Received message:");
-            log.info("\tkey: {}", record.key() == null ? "null" : record.key());
-            log.info("\tpartition: {}", record.partition());
-            log.info("\toffset: {}", record.offset());
-            log.info("\tvalue: {}", record.value());
-            Cell pickupCell = getPickupCellFromTrip(record.value());
-            if (pickupCell.inBounds(MAX_CLAT, MAX_CLONG)) {
-                log.info("\tpickupCell: {}", pickupCell);
-                Trip trip = getTripFromString(record.value());
-                log.info("\ttrip: {}", trip);
-            producer.write(KafkaProducerRecord.create(config.getSinkTopic(),
-                    JsonObject.mapFrom(pickupCell),
-                    JsonObject.mapFrom(trip)));
+
+        final KafkaStreams streams = new KafkaStreams(builder.build(), props);
+        final CountDownLatch latch = new CountDownLatch(1);
+
+        // attach shutdown handler to catch control-c
+        Runtime.getRuntime().addShutdownHook(new Thread("trip-convert-shutdown-hook") {
+            @Override
+            public void run() {
+                streams.close();
+                latch.countDown();
             }
         });
 
-        consumer.partitionsAssignedHandler(topicPartitions -> {
-            assignedTopicPartitions = topicPartitions;
-            TopicPartition topicPartition = assignedTopicPartitions.stream().findFirst().get();
-            String status = String.format("Joined group = [%s], topic = [%s], partition = [%d]", config.getGroupId(), topicPartition.getTopic(), topicPartition.getPartition());
-            log.info(status);
-        });
+        try {
+            streams.start();
+            latch.await();
+        } catch (Throwable e) {
+            System.exit(1);
+        }
+        System.exit(0);
 
-        consumer.subscribe(config.getSourceTopic());
     }
 
     private static Map<TripFields,Integer> TaxiFieldsMap() {

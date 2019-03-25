@@ -27,7 +27,7 @@ public class TaxiProducerExample {
             log.info("Sending data ...");
             while (taxiIn.ready()) {
                 producer.write(KafkaProducerRecord.create(config.getTopic(), taxiIn.readLine()));
-                Thread.sleep(1000);
+                Thread.sleep(100);
             }
 
             producer.close();
