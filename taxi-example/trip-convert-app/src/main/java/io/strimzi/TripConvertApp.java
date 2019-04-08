@@ -27,18 +27,19 @@ import java.util.concurrent.CountDownLatch;
 public class TripConvertApp {
     private static final Logger log = LoggerFactory.getLogger(TripConvertApp.class);
     private static final Map<TripFields,Integer> fieldsMap = TaxiFieldsMap();
-//    private static Set<TopicPartition> assignedTopicPartitions;
 
-    private static final Location START_CELL_CENTRE = new Location(41.474937, -74.913585);
+//    private static final Location START_CELL_CENTRE = new Location(41.474937, -74.913585);
+//    private static final Location START_CELL_CENTRE = new Location(40.939117, -74.3602);
+    private static final Location START_CELL_CENTRE = new Location(40.831164,-74.192491);
     private static final int CELL_SIZE_METRES = 500;
-    private static final Double CELL_SIZE_MILES = CELL_SIZE_METRES / 1609.344; // 500 metres in miles
-    private static final Double CELL_LAT_LENGTH = 2 * (CELL_SIZE_MILES / 69);
-    private static final Double CELL_LONG_LENGTH = 2 * (CELL_LAT_LENGTH / Math.cos(START_CELL_CENTRE.getLatitude()));
+    private static final Double EARTH_RADIUS_METRES = 6371000.0;
+    private static final Double CELL_LAT_LENGTH = (START_CELL_CENTRE.getLatitude() + (CELL_SIZE_METRES / EARTH_RADIUS_METRES) * (180 / Math.PI)) - START_CELL_CENTRE.getLatitude();
+    private static final Double CELL_LONG_LENGTH = (START_CELL_CENTRE.getLongitude() + (CELL_SIZE_METRES / EARTH_RADIUS_METRES) * (180 / Math.PI) / Math.cos(START_CELL_CENTRE.getLatitude() * Math.PI/180)) - START_CELL_CENTRE.getLongitude();
     private static final Location START_CELL_ORIGIN = startCellOrigin(); // Coordinates of top-left corner of cell 1.1
     private static final Location CELL_LENGTH = new Location(CELL_LAT_LENGTH, CELL_LONG_LENGTH);
 
-    private static final int MAX_CLAT = 300;    // max latitude grid size
-    private static final int MAX_CLONG = 300;   // max longitude grid size
+    private static final int MAX_CLAT = 45;    // max latitude grid size
+    private static final int MAX_CLONG = 72;   // max longitude grid size
 
     public static void main(String[] args) {
         TripConvertConfig config = TripConvertConfig.fromEnv();
@@ -51,15 +52,14 @@ public class TripConvertApp {
         KStream<String, String> source = builder.stream(config.getSourceTopic(), Consumed.with(Serdes.String(), Serdes.String()));
         KStream<Cell, Trip> mapped = source
                 .map((key, value) -> {
-                    Trip trip = getTripFromString(value);
+                    Trip trip = constructTripFromString(value);
                     log.info("Received message:");
-                    log.info("\tkey: {}", key == null ? "null" : key);
                     log.info("\tvalue: {}", value);
                     return new KeyValue<>(new Cell(START_CELL_ORIGIN, CELL_LENGTH, trip.getPickupLoc()),trip);
                 })
                 .filter((cell, trip) -> cell.inBounds(MAX_CLAT, MAX_CLONG));
-        mapped.to(config.getSinkTopic(), Produced.with(cellSerde, tripSerde));
 
+        mapped.to(config.getSinkTopic(), Produced.with(cellSerde, tripSerde));
 
         final KafkaStreams streams = new KafkaStreams(builder.build(), props);
         final CountDownLatch latch = new CountDownLatch(1);
@@ -103,7 +103,7 @@ public class TripConvertApp {
         return new Cell(START_CELL_ORIGIN, CELL_LENGTH, pickupLoc);
     }
 
-    public static Trip getTripFromString(String csv) {
+    public static Trip constructTripFromString(String csv) {
         String[] elements = csv.split(",");
         SimpleDateFormat format = new SimpleDateFormat("yyyy-MM-dd H:m:s");
         Date pickupTime = null;

@@ -18,8 +18,8 @@ public class Cell implements Serializable {
     }
 
     public Cell(Location origin, Location sideLength, Location l) {
-        this.clat  = (int) Math.floor(((origin.getLatitude() - l.getLatitude()) / sideLength.getLatitude()) + 1);
-        this.clong = (int) Math.floor(((l.getLongitude() - origin.getLongitude()) / sideLength.getLongitude()) + 1);
+        this.clat  = (int) Math.floor((Math.abs(origin.getLatitude() - l.getLatitude()) / sideLength.getLatitude()) + 1);
+        this.clong = (int) Math.floor((Math.abs(l.getLongitude() - origin.getLongitude()) / sideLength.getLongitude()) + 1);
     }
 
     public int getClat() {

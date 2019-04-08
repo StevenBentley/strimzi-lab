@@ -13,7 +13,7 @@
         <module>taxi-producer</module>
         <module>trip-convert-app</module>
         <module>trip-metrics-app</module>
-        <module>consumer-app</module>
+        <module>trip-consumer-app</module>
     </modules>
 
     <properties>

@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <title>Taxi Consumer App</title>
+    <!-- PatternFly Styles -->
+    <link rel="stylesheet" href="dist/css/patternfly.css">
+    <link rel="stylesheet" href="dist/css/patternfly-additions.min.css">
+
+    <!-- Leaflet -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.4.0/dist/leaflet.css"
+          integrity="sha512-puBpdR0798OZvTTbP4A8Ix/l+A4dHDD0DGqYW6RQ+9jxkRFclaxxQb/SJAWZfWAkuyeQUytO7+7N4QKrDh+drA=="
+          crossorigin=""/>
+    <script src="https://unpkg.com/leaflet@1.4.0/dist/leaflet.js"
+            integrity="sha512-QVftwZFqvtRNi0ZyCtsznlKSWOStnDORoefr1enyq5mVL4tmKB3S/EnC3rRJcxCPavG10IcrVGSmPh6Qw5lwrg=="
+            crossorigin=""></script>
+
+    <!-- jQuery CDN -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.3.1/jquery.min.js"></script>
+
+    <!-- Bootstrap JS CDN -->
+    <script src="https://stackpath.bootstrapcdn.com/bootstrap/4.3.1/js/bootstrap.min.js"></script>
+
+    <!-- Patternfly JS -->
+    <script src="dist/js/patternfly.min.js"></script>
+
+    <!-- SockJS bridging and Vert.x Event Bus -->
+    <script src="sockjs.min.js"></script>
+    <script src="vertx-eventbus.js"></script>
+
+
+    <style media="screen">
+      .log {
+        background: #f1f1f1;
+        height: calc(100vh - 280px);
+        overflow-y: scroll;
+        padding: 20px;
+        margin-top: 20px;
+      }
+
+      .item {
+        margin: 1rem;
+        padding: 1rem;
+        border: 1px solid #f1f1f1;
+        flex: 0 0 350px;
+      }
+      #map {
+        height: calc(100% - 150px);
+      }
+    </style>
+
+  </head>
+  <body>
+
+    <nav class="navbar navbar-default navbar-pf" role="navigation">
+      <div class="navbar-header">
+        <button type="button" class="navbar-toggle" data-toggle="collapse" data-target=".navbar-collapse-11">
+          <span class="sr-only">Toggle navigation</span>
+          <span class="icon-bar"></span>
+          <span class="icon-bar"></span>
+          <span class="icon-bar"></span>
+        </button>
+        <a class="navbar-brand" href="/">
+          <img src="dist/img/brand.svg" alt="PatternFly Enterprise Application" />
+        </a>
+      </div>
+    </nav>
+
+    <div class="container-fluid">
+      <div class="row">
+        <div class="col-sm-8 col-md-9">
+          <div class="page-header page-header-bleed-right">
+            <h1>Taxi Data Dashboard</h1>
+          </div>
+          <div>
+            <strong><p id="status"></p></strong>
+          </div>
+          <!--<div class="h-100">-->
+          <!--<div class="cells" id="cells">-->
+            <!--<table id="cellTable" class="display">-->
+            <!--</table>-->
+          <!--</div>-->
+          <div id="map"></div>
+          <!--</div>-->
+
+        </div><!-- /col -->
+
+        <div class="col-sm-4 col-md-3 sidebar-pf sidebar-pf-right">
+          <div class="sidebar-header sidebar-header-bleed-left sidebar-header-bleed-right">
+            <h2 class="h5">Apache Kafka Messages Dashboard</h2>
+          </div>
+          <p>The log window shows you messages read from the Kafka topic while they come.</p>
+
+          <form class="form-inline">
+            <div class="form-group">
+              <div class="input-group">
+                <span class="input-group-btn">
+                  <button class="btn btn-default" type="button" id="clean">Clean!</button>
+                </span>
+              </div><!-- /input-group -->
+            </div>
+          </form>
+          <ul class="list-unstyled log" id="messages"></ul>
+        </div><!-- /col -->
+      </div><!-- /row -->
+    </div>
+
+    <script>
+
+      var OG_START_CELL_CENTRE = [41.474937, -74.913585],
+          // START_CELL_CENTRE = [40.939117, -74.3602],
+          START_CELL_CENTRE = [40.831164,-74.192491],
+          CELL_SIZE_METRES = 500,
+          CELL_SIZE_MILES = CELL_SIZE_METRES / 1609.344, // 500 metres in miles
+          EARTH_RADIUS_METRES = 6371000.0,
+          CELL_LAT_LENGTH = (START_CELL_CENTRE[0] + (CELL_SIZE_METRES / EARTH_RADIUS_METRES) * (180 / Math.PI)) - START_CELL_CENTRE[0],
+          CELL_LONG_LENGTH = (START_CELL_CENTRE[1] + (CELL_SIZE_METRES / EARTH_RADIUS_METRES) * (180 / Math.PI) / Math.cos(START_CELL_CENTRE[0] * Math.PI / 180)) - START_CELL_CENTRE[1],
+          OG_START_CELL_ORIGIN = [OG_START_CELL_CENTRE[0] + (CELL_LAT_LENGTH / 2),
+                                  OG_START_CELL_CENTRE[1] - (CELL_LONG_LENGTH / 2)],
+          START_CELL_ORIGIN = [START_CELL_CENTRE[0] + (CELL_LAT_LENGTH / 2),
+                               START_CELL_CENTRE[1] - (CELL_LONG_LENGTH / 2)], // Coordinates of top-left corner of cell 1.1
+          CELL_LENGTH = [CELL_LAT_LENGTH, CELL_LONG_LENGTH],
+          MAX_CLAT = 45,
+          MAX_CLONG = 72,
+          HIGH_PROFIT_SCORE = 1000;
+      console.log(CELL_LAT_LENGTH);
+      console.log(CELL_LONG_LENGTH);
+
+      var map = L.map('map'),
+          layer = L.featureGroup(),
+          grid = createArray(MAX_CLAT, MAX_CLONG);
+      $(document).ready( function () {
+        L.tileLayer('https://api.mapbox.com/styles/v1/adam-cattermole/cjtzo15i32cvc1fo9dzcv3m6x/tiles/256/{z}/{x}/{y}@2x?access_token={accessToken}', {
+          attribution: '&copy; <a href="https://www.mapbox.com/">Mapbox</a> &copy; <a href="https://www.openstreetmap.org/">OpenStreetMap</a>',
+          id: 'mapbox.minimo',
+          accessToken: 'pk.eyJ1IjoiYWRhbS1jYXR0ZXJtb2xlIiwiYSI6ImNqdHk4MzNnazBmYXI0NHBuM3h6c3I5cmUifQ.X0CQHfyaf5_Q0odBHVo46A'
+        }).addTo(map);
+        map.setView(START_CELL_CENTRE, 10);
+
+        var start = START_CELL_ORIGIN;
+        for (var i = 0; i < MAX_CLONG; i++) {
+          for (var j = 0; j < MAX_CLAT; j++) {
+            var new_start = [start[0] - CELL_LENGTH[0], start[1]];
+            grid[j][i] = L.rectangle([
+              start,
+              [start[0] - CELL_LENGTH[0], start[1] + CELL_LENGTH[1]]
+            ], {
+              weight: 0.4,
+              opacity: 1,
+              fillOpacity: 0
+            });
+            layer.addLayer(grid[j][i]);
+
+            start = new_start;
+          }
+          start = [START_CELL_ORIGIN[0], start[1] + CELL_LENGTH[1]];
+        }
+        map.addLayer(layer).fitBounds(layer.getBounds());
+      } );
+
+      var eb = new EventBus("http://" + location.host + "/eventbus");
+
+      eb.onopen = function() {
+
+        // handler for getting messages to show in the dashboard
+        eb.registerHandler("dashboard", function(error, message) {
+
+          var msg = 'key [' + message.body.key + '] val [' + message.body.value + ']';
+          $('#messages').prepend('<li>' + msg + '</li>');
+
+          var val = ((message.body.value > HIGH_PROFIT_SCORE) ? HIGH_PROFIT_SCORE : message.body.value);
+          var js = JSON.parse(message.body.key);
+          //
+          grid[js["clat"]-1][js["clong"]-1].setStyle( { fillOpacity: val/HIGH_PROFIT_SCORE } );
+
+        });
+
+        // handler for getting Kafka consumer status
+        eb.registerHandler("status", function(error, message) {
+          $('#status').text(message.body);
+        });
+
+        // asking for Kafka consumer status on startup
+        eb.publish("config", "status");
+      };
+
+      $('#seekToBegin').click(function() {
+        $('#messages').empty();
+        eb.publish("config", "seektobegin");
+      });
+
+      $('#seek').click(function() {
+        $('#messages').empty();
+
+        var offset = $('#offset').val();
+        var headers = {
+          "offset" : offset
+        };
+
+        eb.publish("config", "seek", headers);
+      });
+
+      $('#clean').click(function() {
+        $('#messages').empty();
+        for (var i = 0; i < MAX_CLONG; i++) {
+          for (var j = 0; j < MAX_CLAT; j++) {
+            grid[j][i].setStyle( { fillOpacity: 0 } );
+          }
+        }
+      });
+
+      function createArray(length) {
+        var arr = new Array(length || 0),
+                i = length;
+
+        if (arguments.length > 1) {
+          var args = Array.prototype.slice.call(arguments, 1);
+          while(i--) {
+            arr[length-1 - i] = createArray.apply(this, args);
+            arr[length-1 - i].fill(0);
+          }
+        } else {
+          arr.fill(0);
+        }
+
+        return arr;
+      }
+
+    </script>
+
+  </body>
+</html>

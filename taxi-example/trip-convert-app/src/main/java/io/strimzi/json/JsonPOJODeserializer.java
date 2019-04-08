@@ -19,7 +19,6 @@ public class JsonPOJODeserializer<T> implements Deserializer<T> {
         this.tClass = tClass;
     }
 
-    @SuppressWarnings("unchecked")
     @Override
     public void configure(Map<String, ?> map, boolean b) {}
 

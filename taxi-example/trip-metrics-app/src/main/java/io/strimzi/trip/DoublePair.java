@@ -5,13 +5,13 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 
 import java.io.Serializable;
 
-public class Pair implements Serializable {
+public class DoublePair implements Serializable {
     Double x;
     Double y;
 
     @JsonCreator
-    public Pair(@JsonProperty("x") Double x,
-                @JsonProperty("y") Double y) {
+    public DoublePair(@JsonProperty("x") Double x,
+                      @JsonProperty("y") Double y) {
         this.x = x;
         this.y = y;
     }
@@ -34,7 +34,7 @@ public class Pair implements Serializable {
 
     @Override
     public String toString() {
-        return "Pair{" +
+        return "DoublePair{" +
                 "x=" + x +
                 ", y=" + y +
                 '}';
