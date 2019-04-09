@@ -33,8 +33,11 @@ public class TripConvertApp {
     private static final Location START_CELL_CENTRE = new Location(40.831164,-74.192491);
     private static final int CELL_SIZE_METRES = 500;
     private static final Double EARTH_RADIUS_METRES = 6371000.0;
-    private static final Double CELL_LAT_LENGTH = (START_CELL_CENTRE.getLatitude() + (CELL_SIZE_METRES / EARTH_RADIUS_METRES) * (180 / Math.PI)) - START_CELL_CENTRE.getLatitude();
-    private static final Double CELL_LONG_LENGTH = (START_CELL_CENTRE.getLongitude() + (CELL_SIZE_METRES / EARTH_RADIUS_METRES) * (180 / Math.PI) / Math.cos(START_CELL_CENTRE.getLatitude() * Math.PI/180)) - START_CELL_CENTRE.getLongitude();
+    private static final Double CELL_LAT_LENGTH = (START_CELL_CENTRE.getLatitude() +
+            (CELL_SIZE_METRES / EARTH_RADIUS_METRES) * (180 / Math.PI)) - START_CELL_CENTRE.getLatitude();
+    private static final Double CELL_LONG_LENGTH = (START_CELL_CENTRE.getLongitude() +
+            (CELL_SIZE_METRES / EARTH_RADIUS_METRES) * (180 / Math.PI) /
+                    Math.cos(START_CELL_CENTRE.getLatitude() * Math.PI/180)) - START_CELL_CENTRE.getLongitude();
     private static final Location START_CELL_ORIGIN = startCellOrigin(); // Coordinates of top-left corner of cell 1.1
     private static final Location CELL_LENGTH = new Location(CELL_LAT_LENGTH, CELL_LONG_LENGTH);
 

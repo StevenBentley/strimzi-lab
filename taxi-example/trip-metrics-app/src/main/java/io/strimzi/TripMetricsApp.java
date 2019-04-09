@@ -35,13 +35,16 @@ public class TripMetricsApp {
 
         KStream<Cell, Trip> source = builder.stream(config.getSourceTopic(), Consumed.with(cellSerde, tripSerde));
         KStream<Windowed<Cell>, DoublePair> windowed = source
+//                .filter((key, val) -> val.getTripTime() != 0 && val.getTripDistance() != 0)
                 .groupByKey(Serialized.with(cellSerde, tripSerde))
                 .windowedBy(TimeWindows.of(TimeUnit.MINUTES.toMillis(15)))
                 .aggregate(
-                        () -> new DoublePair((double) 0, (double)0),
+                        () -> new DoublePair((double) 0, (double) 0),
                         (key, record, profit) -> {
                             profit.setX(profit.getX() + 1);
                             profit.setY(profit.getY() + (record.getFareAmount() + record.getTipAmount()));
+//                            profit.setY(profit.getY() + (record.getTripDistance()));
+//                            profit.setY(profit.getY() + (record.getTripDistance()/(record.getTripTime()/3600)));
                             return profit;
                         },
                         Materialized.<Cell, DoublePair, WindowStore<Bytes, byte[]>>as("profit-store") /* state store name */
@@ -51,7 +54,8 @@ public class TripMetricsApp {
         windowed.foreach((key, value) -> log.info("key: {}, val:{}", key.key(), value));
 
         KStream<Cell, Double> average = windowed
-                .map((cell, pair) -> new KeyValue<>(cell.key(), (double) Math.round((pair.getY())*100)/100));
+                .map((cell, pair) -> new KeyValue<>(cell.key(), (double) Math.round(pair.getY()*100)/100));
+//                .map((cell, pair) -> new KeyValue<>(cell.key(), (double) Math.round((pair.getY()/pair.getX())*100)/100));
 
         average.foreach((key, value) -> log.info("key: {}, val:{}", key, value));
 

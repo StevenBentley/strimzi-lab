@@ -22,7 +22,7 @@
     <script src="https://stackpath.bootstrapcdn.com/bootstrap/4.3.1/js/bootstrap.min.js"></script>
 
     <!-- Patternfly JS -->
-    <script src="dist/js/patternfly.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/patternfly/3.59.1/js/patternfly.min.js"></script>
 
     <!-- SockJS bridging and Vert.x Event Bus -->
     <script src="sockjs.min.js"></script>
@@ -107,7 +107,7 @@
 
     <script>
 
-      var OG_START_CELL_CENTRE = [41.474937, -74.913585],
+      const OG_START_CELL_CENTRE = [41.474937, -74.913585],
           // START_CELL_CENTRE = [40.939117, -74.3602],
           START_CELL_CENTRE = [40.831164,-74.192491],
           CELL_SIZE_METRES = 500,
@@ -122,11 +122,11 @@
           CELL_LENGTH = [CELL_LAT_LENGTH, CELL_LONG_LENGTH],
           MAX_CLAT = 45,
           MAX_CLONG = 72,
-          HIGH_PROFIT_SCORE = 1000;
-      console.log(CELL_LAT_LENGTH);
-      console.log(CELL_LONG_LENGTH);
+          HIGH_PROFIT_METRIC = 1000;
+          // HIGH_DISTANCE_METRIC = 20;
+          // HIGH_SPEED_METRIC = 60;
 
-      var map = L.map('map'),
+      let map = L.map('map'),
           layer = L.featureGroup(),
           grid = createArray(MAX_CLAT, MAX_CLONG);
       $(document).ready( function () {
@@ -137,10 +137,10 @@
         }).addTo(map);
         map.setView(START_CELL_CENTRE, 10);
 
-        var start = START_CELL_ORIGIN;
-        for (var i = 0; i < MAX_CLONG; i++) {
-          for (var j = 0; j < MAX_CLAT; j++) {
-            var new_start = [start[0] - CELL_LENGTH[0], start[1]];
+        let start = START_CELL_ORIGIN;
+        for (let i = 0; i < MAX_CLONG; i++) {
+          for (let j = 0; j < MAX_CLAT; j++) {
+            let new_start = [start[0] - CELL_LENGTH[0], start[1]];
             grid[j][i] = L.rectangle([
               start,
               [start[0] - CELL_LENGTH[0], start[1] + CELL_LENGTH[1]]
@@ -158,20 +158,24 @@
         map.addLayer(layer).fitBounds(layer.getBounds());
       } );
 
-      var eb = new EventBus("http://" + location.host + "/eventbus");
+      let eb = new EventBus("http://" + location.host + "/eventbus");
 
       eb.onopen = function() {
 
         // handler for getting messages to show in the dashboard
         eb.registerHandler("dashboard", function(error, message) {
 
-          var msg = 'key [' + message.body.key + '] val [' + message.body.value + ']';
+          let msg = 'key [' + message.body.key + '] val [' + message.body.value + ']';
           $('#messages').prepend('<li>' + msg + '</li>');
 
-          var val = ((message.body.value > HIGH_PROFIT_SCORE) ? HIGH_PROFIT_SCORE : message.body.value);
-          var js = JSON.parse(message.body.key);
+          let val = ((message.body.value > HIGH_PROFIT_METRIC) ? HIGH_PROFIT_METRIC : message.body.value),
+          // let val = ((message.body.value > HIGH_DISTANCE_METRIC) ? HIGH_DISTANCE_METRIC : message.body.value),
+          // let val = ((message.body.value > HIGH_SPEED_METRIC) ? HIGH_SPEED_METRIC : message.body.value),
+              js = JSON.parse(message.body.key);
           //
-          grid[js["clat"]-1][js["clong"]-1].setStyle( { fillOpacity: val/HIGH_PROFIT_SCORE } );
+          grid[js["clat"]-1][js["clong"]-1].setStyle( { fillOpacity: val/HIGH_PROFIT_METRIC } );
+          // grid[js["clat"]-1][js["clong"]-1].setStyle( { fillOpacity: val/HIGH_DISTANCE_METRIC } );
+          // grid[js["clat"]-1][js["clong"]-1].setStyle( { fillOpacity: val/HIGH_SPEED_METRIC } );
 
         });
 
@@ -192,35 +196,30 @@
       $('#seek').click(function() {
         $('#messages').empty();
 
-        var offset = $('#offset').val();
-        var headers = {
-          "offset" : offset
-        };
+        let offset = $('#offset').val(),
+            headers = {
+              "offset" : offset
+            };
 
         eb.publish("config", "seek", headers);
       });
 
       $('#clean').click(function() {
         $('#messages').empty();
-        for (var i = 0; i < MAX_CLONG; i++) {
-          for (var j = 0; j < MAX_CLAT; j++) {
+        for (let i = 0; i < MAX_CLONG; i++) {
+          for (let j = 0; j < MAX_CLAT; j++) {
             grid[j][i].setStyle( { fillOpacity: 0 } );
           }
         }
       });
 
       function createArray(length) {
-        var arr = new Array(length || 0),
+        let arr = new Array(length || 0),
                 i = length;
 
         if (arguments.length > 1) {
-          var args = Array.prototype.slice.call(arguments, 1);
-          while(i--) {
-            arr[length-1 - i] = createArray.apply(this, args);
-            arr[length-1 - i].fill(0);
-          }
-        } else {
-          arr.fill(0);
+          let args = Array.prototype.slice.call(arguments, 1);
+          while(i--) arr[length-1 - i] = createArray.apply(this, args);
         }
 
         return arr;

@@ -38,11 +38,11 @@ public class Cell implements Serializable {
     }
 
     public boolean inBounds(int minClat, int minClong, int maxClat, int maxClong) {
-        return (this.clat > minClat && this.clong > minClong) && inBounds(maxClat, maxClong);
+        return (this.clat >= minClat && this.clong >= minClong) && (this.clat <= maxClat && this.clong <= maxClong);
     }
 
     public boolean inBounds(int maxClat, int maxClong) {
-        return this.clat <= maxClat && this.clong <= maxClong;
+        return inBounds(1,1, maxClat, maxClong);
     }
 
     @Override
