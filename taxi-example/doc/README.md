@@ -4,11 +4,9 @@ date: 08-04-2019
 author: Adam Cattermole
 ---
 
-
-
 # Building a Kafka Streams Application
 
-Within this article we describe the steps required to get started with building your own Kafka Streams application on top of Strimzi. We start with a simple example and build upon it to create a multi-stage pipeline, performing some operations on the data stream and visualising at the consumer.
+Within this article we describe the steps required to get started with building your own Kafka Streams application on top of Strimzi. We start with a simple example and build upon it to create a multi-stage pipeline, performing some operations on the data stream, and visualising at the consumer.
 
 ## Dataset/Problem
 
@@ -55,7 +53,9 @@ Follow the current [Strimzi quickstart documentation](<https://strimzi.io/quicks
 
 First things first, we need to make our dataset accessible from the cluster.
 
-Next we have to deploy KafkaConnect to our cluster using the cluster operator, describe in the [Strimzi documentation here](<https://strimzi.io/docs/latest/#kafka-connect-str>). KafkaConnect is exposed as a RESTful resource, and so to create a new Connector we can `POST` the following. This creates a new `FileStreamSourceConnector`, pointing at the volume containing our data file, exporting it to our new KafkaTopic `taxi-source-topic`.
+Next we have to deploy KafkaConnect to our cluster using the cluster operator, describe in the [Strimzi documentation here](<https://strimzi.io/docs/latest/#kafka-connect-str>).
+
+KafkaConnect is exposed as a RESTful resource, and so to create a new Connector we can `POST` the following. This creates a new `FileStreamSourceConnector`, pointing at the volume containing our data file, exporting it to our new KafkaTopic `taxi-source-topic`.
 
 ```bash
 curl -X POST ...
@@ -69,7 +69,7 @@ oc run kafka-consumer -ti --image=strimzi/kafka:0.11.1-kafka-2.1.0 --rm=true --r
 
 ## Kafka Streams Operations on the Data
 
-Now that we have confirmed that the `String` data is present in the system, we can start to perform operations on the data. To start with, we need to configure the Kafka client with several different options - these are provided through use of the [TripConvertConfig.java???](). Some configuration is passed in from the deployment YAML using environment variables, so that this is abstracted away from the application logic. For each new application that we develop we use the same method for providing configuration. Lets create the config options using this first:
+Now that we have confirmed that the `String` data is present in the system, we can start to perform operations on the data. To start with, we need to configure the Kafka client with several different options - these are provided through use of the [TripConvertConfig.java](../trip-convert-app/src/main/java/io/strimzi/TripConvertConfig.java). Some configuration is passed in from the deployment YAML using environment variables, so that this is abstracted away from the application logic. For each new application that we develop we use the same method for providing configuration. Lets create the config options using this first:
 
 ```java
 TripConvertConfig config = TripConvertConfig.fromEnv();
@@ -88,11 +88,11 @@ To perform any operations on the data, we need to convert the `<String, String>`
 ```java
 KStream<String, Trip> mapped = source
                 .map((key, value) -> {
-                		new KeyValue<>(key, constructTripFromString(value))
+                    new KeyValue<>(key, constructTripFromString(value))
                 });
 ```
 
-We could then write the output rom this operation to the sink topic, however the SerDes we use has changed for the value field. We require a method of performing this sort of operation on the custom data type we have created. This is where the [JsonObjectSerde.java??]() class comes into play. We are using the [Vertx JsonObject](<https://vertx.io/docs/apidocs/io/vertx/core/json/JsonObject.html>) implementation, and including our class type in the constructor to save us doing the hard work, although a different implementation may be better suited to your application. The original `Trip` type only needs adjusting with appropriate `@JsonCreator` and `@JsonProperty` annotations. We are now ready to output to our KafkaTopic with the following:
+We could then write the output rom this operation to the sink topic, however the SerDes we use has changed for the value field. We require a method of performing this sort of operation on the custom data type we have created. This is where the [JsonObjectSerde.java](../trip-convert-app/src/main/java/io/strimzi/json/JsonObjectSerde.java) class comes into play. We are using the [Vertx JsonObject](<https://vertx.io/docs/apidocs/io/vertx/core/json/JsonObject.html>) implementation, and including our class type in the constructor to save us doing the hard work, although a different implementation may be better suited to your application. The original `Trip` type only needs adjusting with appropriate `@JsonCreator` and `@JsonProperty` annotations. We are now ready to output to our KafkaTopic with the following:
 
 ```java
 final JsonObjectSerde<Trip> tripSerde = new JsonObjectSerde<>(Trip.class);
@@ -105,17 +105,20 @@ We wanted to calculate profitability of a particular cell by calculating which c
 
 We use an origin point (blue point in the figure) representing the centre of the grid cell (1,1), and a size in metres of each cell in the grid. The cell size is converted into a latitude and longitude distance, `dy` and `dx` respectively, and the position of the top left of the grid is calculated (red point), which allows us to easily count how many of this distance away the incoming coordinates are, and therefore that it originates from cell (3,4).
 
-![grid-example](figures/taxi-grid.png "Taxi Grid Example")
+<p align="center">
+  <img src ="assets/taxi-grid.png" alt="Taxi Grid Example"/>
+</p>
 
-The additional application logic in the [Cell.java???]() class and [TripConvertApp.java???]() perform this calculation, and we set the key of the new records as the `Cell` type, using a new SerDes created in an identical fashion to that of the `tripSerde`. This is important to ensure that every `Trip` corresponding to a particular pickup `Cell` are distributed to the same partition, and in turn the same processing node will receive this event, ensuring correctness and reproducability of the operations.
+
+The additional application logic in the [Cell.java](../trip-convert-app/src/main/java/io/strimzi/trip/Cell.java) class and [TripConvertApp.java](../trip-convert-app/src/main/java/io/strimzi/TripConvertApp.java) perform this calculation, and we set the key of the new records as the `Cell` type, using a new SerDes created in an identical fashion to that of the `tripSerde`. This is important to ensure that every `Trip` corresponding to a particular pickup `Cell` are distributed to the same partition, and in turn the same processing node will receive this event, ensuring correctness and reproducability of the operations.
 
 ## Aggregation
 
 Now that we have data arriving as type `<Cell, Trip>` we would like to perform an aggregation operation. To keep things simple, we intend to calculate the sum of the `fare_amount + tip_amount` for every journey originating from one pickup cell within a set time period.
 
-The first thing we need is to create a class that implements `TimestampExtractor`, which we can set in our configuration, as we want our time windows to be based on the time included in the events, instead of the time they entered the system. See the implementation in [TripTimestampExtractor.java???]() for details.
+The first thing we need is to create a class that implements `TimestampExtractor`, which we can set in our configuration, as we want our time windows to be based on the time included in the events, instead of the time they entered the system. See the implementation in [TripTimestampExtractor.java](../trip-metrics-app/src/main/java/io/strimzi/trip/TripTimestampExtractor.java) for details.
 
-
+We use `groupByKey` to ensure our records are partitioned by cell before we perform the subsequent window operation. The window size is easily changeable, for the time being though we have chosen a window of 15 minutes. Finally we provide an aggregate operation, where we provide the base accumulator value, and the function that we apply to each record. The output of this function is a type of `KTable`, where the keys correspond to a particular window, and the value is the profit value sum.
 
 ```java
 KStream<Cell, Trip> source = builder.stream(config.getSourceTopic(), Consumed.with(cellSerde, tripSerde));
@@ -132,25 +135,40 @@ KStream<Windowed<Cell>, Double> windowed = source
         .toStream();
 ```
 
+We use `toStream()` to convert it back to a `KStream`, and re-map the cell as the key, as well as rounding the profit to two decimal places.
 
+```java
+KStream<Cell, Double> rounded = windowed
+                .map((cell, profit) -> new KeyValue<>(cell.key(), (double) Math.round(profit*100)/100));
+```
 
-- groupbykey
-- window
-- why materialized
-- output to new topic
+The data can now be written to the output topic using the same method as in the previous application.
+
+```java
+rounded.to(config.getSinkTopic(), Produced.with(cellSerde, Serdes.Double()));
+```
 
 ## Consume and Visualise
 
-- vertx eventbus
-- stream to sockjs
-- output events to dashboard log
-- draw grid using leaflet
-- calculate opacity out of arbitrary value
-- set map cell opacity style
+Now that we have the cell based profit metric being output to the final topic, we can write some code to consume and visualise the data. We are using the Vertx Kafka Consumer to consume the data from our topic, and we stream it to our JavaScript dashboard using Vertx EventBus and sockjs (WebSockets). See [TripConsumerApp.java](../trip-consumer-app/src/main/java/io/strimzi/TripConsumerApp.java) for the implementation.
 
-## References
+We setup a `KafkaConsumer` instance and configure the handler to publish messages to a particular outbound EventBus channel. In JavaScript we can configure the EventBus connection and register a handler for messages arriving at the same address and perform an action to visualise the data. We publish the data as JSON to allow us to easily read the data in JavaScript later on. As the `Cell` key has already been serialised to a JSON string we can save some work by reading it as a `String` instead of parsing to a cell.
 
-[1]: http://www.debs2015.org/call-grand-challenge.html	"DEBS 2015 Grand Challenge"
+```java
+KafkaConsumer<String, Double> consumer = KafkaConsumer.create(vertx, props, String.class, Double.class);
+        consumer.handler(record -> {
+            JsonObject json = new JsonObject();
+            json.put("key", record.key());
+            json.put("value", record.value());
+            vertx.eventBus().publish("dashboard", json);
+        });
+```
+
+We log the information in a window so that we can see the raw data, and use a geographical mapping library ([Leaflet](<https://leafletjs.com/>)) to draw the original cells, modifying the opacity based on the value of the metric.
+
+<p align="center">
+  <img src ="assets/dashboard.png" alt="Screenshot of Dashboard"/>
+</p>
 
 
-
+By modifying the starting latitude and longitude, or the cell size (in both [index.html](../trip-consumer-app/src/main/resources/webroot/index.html) and [TripConvertApp.java](../trip-convert-app/src/main/java/io/strimzi/TripConvertApp.java)) you can change the grid that is being worked with. You can also adjust the logic in the aggregate function to calculate some alternative metric from the data.
