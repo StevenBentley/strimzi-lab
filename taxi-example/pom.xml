@@ -14,6 +14,7 @@
         <module>trip-convert-app</module>
         <module>trip-metrics-app</module>
         <module>trip-consumer-app</module>
+        <module>taxi-connect</module>
     </modules>
 
     <properties>

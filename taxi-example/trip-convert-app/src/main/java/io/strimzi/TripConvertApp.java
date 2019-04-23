@@ -55,9 +55,9 @@ public class TripConvertApp {
         KStream<String, String> source = builder.stream(config.getSourceTopic(), Consumed.with(Serdes.String(), Serdes.String()));
         KStream<Cell, Trip> mapped = source
                 .map((key, value) -> {
-                    Trip trip = constructTripFromString(value);
                     log.info("Received message:");
                     log.info("\tvalue: {}", value);
+                    Trip trip = constructTripFromString(value);
                     return new KeyValue<>(new Cell(START_CELL_ORIGIN, CELL_LENGTH, trip.getPickupLoc()),trip);
                 })
                 .filter((cell, trip) -> cell.inBounds(MAX_CLAT, MAX_CLONG));
