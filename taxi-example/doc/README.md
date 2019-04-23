@@ -10,7 +10,7 @@ Within this article we describe the steps required to get started with building 
 
 ## Dataset/Problem
 
-The data we have chosen for this example is New York City taxi journey information from 2013, which was the dataset for the [Distributed Event Based Systems (DEBS) Grand Challenge in 2015](http://www.debs2015.org/call-grand-challenge.html). For a description of the source of the data, see [the article here](<https://chriswhong.com/open-data/foil_nyc_taxi/>).
+The data we have chosen for this example is New York City taxi journey information from 2013, which was the dataset for the [Distributed Event Based Systems (DEBS) Grand Challenge in 2015](http://www.debs2015.org/call-grand-challenge.html). For a description of the source of the data, see [the article here](https://chriswhong.com/open-data/foil_nyc_taxi/).
 
 The dataset is provided as a CSV file, with the columns detailed below:
 
@@ -47,24 +47,71 @@ We will build this example up step-by-step, starting with KafkaConnect and the S
 
 ## Strimzi Setup
 
-Follow the current [Strimzi quickstart documentation](<https://strimzi.io/quickstarts/>) to get the Kafka cluster deployed.
+Follow the current [Strimzi quickstart documentation](https://strimzi.io/quickstarts/) to get the Kafka cluster deployed.
 
 ## Getting Data into the System
 
-First things first, we need to make our dataset accessible from the cluster.
+First things first, we need to make our dataset accessible from the cluster. The example connector that has been built relys on hosting the file on an FTP server. For convenience, we use a python library `pyftpdlib` to host the file with the username and password set to `strimzi`.
 
-Next we have to deploy KafkaConnect to our cluster using the cluster operator, describe in the [Strimzi documentation here](<https://strimzi.io/docs/latest/#kafka-connect-str>).
+We have built a connector, which consists of both the connector itself and tasks. The tasks are invoked based on the configuration of `tasks.max`, and the `poll()` function is called to retrieve data. We use the [FTPConnection.java](../taxi-connect/src/main/java/io/strimzi/util/FTPConnection.java) class, which provides a wrapper to the existing Apache Commons [FTPClient](https://commons.apache.org/proper/commons-net/apidocs/org/apache/commons/net/ftp/FTPClient.html). It should be mentioned however that invoking several tasks to stream data from the same file could result in undesirable behaviour and out of order messages, so we do not use the `maxTasks` parameter in `taskConfigs(..)`.
 
-KafkaConnect is exposed as a RESTful resource, and so to create a new Connector we can `POST` the following. This creates a new `FileStreamSourceConnector`, pointing at the volume containing our data file, exporting it to our new KafkaTopic `taxi-source-topic`.
+To deploy the connector, we simply have to build a new docker image based on the existing [strimzi/kafka-connect](https://hub.docker.com/r/strimzi/kafka-connect) image, copying the JAR from our build into the plugins folder - see the docs [here](https://strimzi.io/docs/master/#creating-new-image-from-base-str). We can then deploy the new image with the same configuration as the [existing KafkaConnect example](https://github.com/strimzi/strimzi-kafka-operator/blob/master/examples/kafka-connect/kafka-connect.yaml), adding the `spec.image` field to point to the correct image.
+
+To check that the connector is present you can run the following to list all connector plugins:
 
 ```bash
-curl -X POST ...
+oc exec -i my-cluster-kafka-0 -- curl -s -X GET \
+    http://my-connect-cluster-connect-api:8083/connector-plugins
+```
+
+KafkaConnect is exposed as a RESTful resource, and so to create a new Connector we can `POST` the following. This creates a new `TaxiSourceConnector`, pointing to the FTP server, and providing the path to the file, exporting it to our new KafkaTopic `taxi-source-topic`. For this to work correctly, the following configuartion needs to be set correctly
+
+`connect.ftp.address` should be set to the IP address of the FTP server.
+
+`connect.ftp.filepath` should be set to the path of the file to be read from the root of the FTP server.
+
+```bash
+oc exec -i my-cluster-kafka-0 -- curl -s -X POST \
+    -H "Accept:application/json" \
+    -H "Content-Type:application/json" \
+    http://my-connect-cluster-connect-api:8083/connectors -d @- <<'EOF'
+
+{
+    "name": "taxi-connector",
+    "config": {
+        "connector.class": "io.strimzi.TaxiSourceConnector",
+        "connect.ftp.address": "<ip-address>",
+        "connect.ftp.user": "strimzi",
+        "connect.ftp.password": "strimzi",
+        "connect.ftp.filepath": "taxi-data/sorteddata.csv",
+        "connect.ftp.topic": "taxi-source-topic",
+        "tasks.max": "1",
+        "value.converter": "org.apache.kafka.connect.storage.StringConverter"
+    }
+}
+EOF
+```
+
+To check that the connector has successfully been created, check that it is listed here:
+
+```bash
+oc exec -i my-cluster-kafka-0 -- curl -s -X GET \
+    http://my-connect-cluster-connect-api:8083/connectors
 ```
 
 We can check that the data is streaming correctly by consuming events from the topic:
 
 ```bash
 oc run kafka-consumer -ti --image=strimzi/kafka:0.11.1-kafka-2.1.0 --rm=true --restart=Never -- bin/kafka-console-consumer.sh --bootstrap-server my-cluster-kafka-bootstrap:9092 --topic taxi-source-topic --from-beginning
+```
+
+For debugging information, see the logs of `my-connect-cluster`.
+
+Lets delete the connector for now and start to look at the rest of the pipeline:
+
+```bash
+oc exec -i my-cluster-kafka-0 -- curl -s -X DELETE \
+    http://my-connect-cluster-connect-api:8083/connectors/taxi-connector
 ```
 
 ## Kafka Streams Operations on the Data
@@ -92,7 +139,7 @@ KStream<String, Trip> mapped = source
                 });
 ```
 
-We could then write the output rom this operation to the sink topic, however the SerDes we use has changed for the value field. We require a method of performing this sort of operation on the custom data type we have created. This is where the [JsonObjectSerde.java](../trip-convert-app/src/main/java/io/strimzi/json/JsonObjectSerde.java) class comes into play. We are using the [Vertx JsonObject](<https://vertx.io/docs/apidocs/io/vertx/core/json/JsonObject.html>) implementation, and including our class type in the constructor to save us doing the hard work, although a different implementation may be better suited to your application. The original `Trip` type only needs adjusting with appropriate `@JsonCreator` and `@JsonProperty` annotations. We are now ready to output to our KafkaTopic with the following:
+We could then write the output rom this operation to the sink topic, however the SerDes we use has changed for the value field. We require a method of performing this sort of operation on the custom data type we have created. This is where the [JsonObjectSerde.java](../trip-convert-app/src/main/java/io/strimzi/json/JsonObjectSerde.java) class comes into play. We are using the [Vertx JsonObject](https://vertx.io/docs/apidocs/io/vertx/core/json/JsonObject.html) implementation, and including our class type in the constructor to save us doing the hard work, although a different implementation may be better suited to your application. The original `Trip` type only needs adjusting with appropriate `@JsonCreator` and `@JsonProperty` annotations. We are now ready to output to our KafkaTopic with the following:
 
 ```java
 final JsonObjectSerde<Trip> tripSerde = new JsonObjectSerde<>(Trip.class);
@@ -164,11 +211,17 @@ KafkaConsumer<String, Double> consumer = KafkaConsumer.create(vertx, props, Stri
         });
 ```
 
-We log the information in a window so that we can see the raw data, and use a geographical mapping library ([Leaflet](<https://leafletjs.com/>)) to draw the original cells, modifying the opacity based on the value of the metric.
+We log the information in a window so that we can see the raw data, and use a geographical mapping library ([Leaflet](https://leafletjs.com/)) to draw the original cells, modifying the opacity based on the value of the metric.
 
 <p align="center">
   <img src ="assets/dashboard.png" alt="Screenshot of Dashboard"/>
 </p>
-
-
 By modifying the starting latitude and longitude, or the cell size (in both [index.html](../trip-consumer-app/src/main/resources/webroot/index.html) and [TripConvertApp.java](../trip-convert-app/src/main/java/io/strimzi/TripConvertApp.java)) you can change the grid that is being worked with. You can also adjust the logic in the aggregate function to calculate some alternative metric from the data.
+
+## System Design
+
+Below you can find a figure showing the overall architecture of the pipeline
+
+<p align=center>
+  <img src="assets/taxi-implementation.png" alt="Appliction Structure">
+</p>

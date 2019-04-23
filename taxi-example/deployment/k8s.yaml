@@ -28,49 +28,30 @@ spec:
   replicas: 1
   partitions: 12
 ---
-apiVersion: kafka.strimzi.io/v1alpha1
-kind: KafkaConnect
+apiVersion: extensions/v1beta1
+kind: Deployment
 metadata:
-  name: my-connect-cluster
+  labels:
+    app: taxi-example
+  name: taxi-producer
 spec:
-  image: adamcattermole/taxi-connect:latest
-  imagePullPolicy: 'Always'
-  version: 2.1.0
   replicas: 1
-  bootstrapServers: my-cluster-kafka-bootstrap:9093
-  tls:
-    trustedCertificates:
-      - secretName: my-cluster-cluster-ca-cert
-        certificate: ca.crt
-  config:
-    config.storage.replication.factor: 2
-    offset.storage.replication.factor: 2
-    status.storage.replication.factor: 2
+  template:
+    metadata:
+      labels:
+        app: taxi-producer
+    spec:
+      containers:
+      - name: taxi-producer
+        image: adamcattermole/taxi-producer:latest
+        env:
+          - name: BOOTSTRAP_SERVERS
+            value: my-cluster-kafka-bootstrap:9092
+          - name: TOPIC
+            value: taxi-source-topic
+          - name: LOG_LEVEL
+            value: "INFO"
 ---
-#apiVersion: extensions/v1beta1
-#kind: Deployment
-#metadata:
-#  labels:
-#    app: taxi-example
-#  name: taxi-producer
-#spec:
-#  replicas: 1
-#  template:
-#    metadata:
-#      labels:
-#        app: taxi-producer
-#    spec:
-#      containers:
-#      - name: taxi-producer
-#        image: adamcattermole/taxi-producer:latest
-#        env:
-#          - name: BOOTSTRAP_SERVERS
-#            value: my-cluster-kafka-bootstrap:9092
-#          - name: TOPIC
-#            value: taxi-source-topic
-#          - name: LOG_LEVEL
-#            value: "INFO"
-#---
 apiVersion: extensions/v1beta1
 kind: Deployment
 metadata:
@@ -171,19 +152,6 @@ spec:
       port: 8080
       protocol: TCP
       targetPort: 8080
+  type: NodePort
   selector:
-    name: trip-consumer-app
----
-apiVersion: v1
-kind: Route
-metadata:
-  labels:
-    app: taxi-example
-    name: trip-consumer-app
-  name: trip-consumer-app
-spec:
-  port:
-    targetPort: http
-  to:
-    kind: Service
     name: trip-consumer-app

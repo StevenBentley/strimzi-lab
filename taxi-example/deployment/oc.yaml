@@ -1,0 +1,170 @@
+apiVersion: kafka.strimzi.io/v1alpha1
+kind: KafkaTopic
+metadata:
+  name: taxi-source-topic
+  labels:
+      strimzi.io/cluster: my-cluster
+spec:
+  replicas: 1 
+  partitions: 12
+---
+apiVersion: kafka.strimzi.io/v1alpha1
+kind: KafkaTopic
+metadata:
+  name: taxi-trip-topic
+  labels:
+    strimzi.io/cluster: my-cluster
+spec:
+  replicas: 1
+  partitions: 12
+---
+apiVersion: kafka.strimzi.io/v1alpha1
+kind: KafkaTopic
+metadata:
+  name: cell-profit-topic
+  labels:
+    strimzi.io/cluster: my-cluster
+spec:
+  replicas: 1
+  partitions: 12
+---
+apiVersion: extensions/v1beta1
+kind: Deployment
+metadata:
+  labels:
+    app: taxi-example
+  name: taxi-producer
+spec:
+  replicas: 1
+  template:
+    metadata:
+      labels:
+        app: taxi-producer
+    spec:
+      containers:
+      - name: taxi-producer
+        image: adamcattermole/taxi-producer:latest
+        env:
+          - name: BOOTSTRAP_SERVERS
+            value: my-cluster-kafka-bootstrap:9092
+          - name: TOPIC
+            value: taxi-source-topic
+          - name: LOG_LEVEL
+            value: "INFO"
+---
+apiVersion: extensions/v1beta1
+kind: Deployment
+metadata:
+  labels:
+    app: taxi-example
+  name: trip-convert-app
+spec:
+  replicas: 1
+  template:
+    metadata:
+      labels:
+        app: trip-convert-app
+    spec:
+      containers:
+      - name: trip-convert-app
+        image: adamcattermole/trip-convert-app:latest
+        imagePullPolicy: 'Always'
+        env:
+          - name: BOOTSTRAP_SERVERS
+            value: my-cluster-kafka-bootstrap:9092
+          - name: SOURCE_TOPIC
+            value: taxi-source-topic
+          - name: SINK_TOPIC
+            value: taxi-trip-topic
+          - name: GROUP_ID
+            value: trip-convert-app
+          - name: LOG_LEVEL
+            value: "INFO"
+---
+apiVersion: extensions/v1beta1
+kind: Deployment
+metadata:
+  labels:
+    app: taxi-example
+  name: trip-metrics-app
+spec:
+  replicas: 1
+  template:
+    metadata:
+      labels:
+        app: trip-metrics-app
+    spec:
+      containers:
+        - name: trip-metrics-app
+          image: adamcattermole/trip-metrics-app:latest
+          imagePullPolicy: 'Always'
+          env:
+            - name: BOOTSTRAP_SERVERS
+              value: my-cluster-kafka-bootstrap:9092
+            - name: SOURCE_TOPIC
+              value: taxi-trip-topic
+            - name: SINK_TOPIC
+              value: cell-profit-topic
+            - name: GROUP_ID
+              value: trip-metrics-app
+            - name: LOG_LEVEL
+              value: "INFO"
+---
+
+apiVersion: extensions/v1beta1
+kind: Deployment
+metadata:
+  name: trip-consumer-app
+  labels:
+    app: taxi-example
+spec:
+  replicas: 1
+  template:
+    metadata:
+      labels:
+        app: taxi-example
+        name: trip-consumer-app
+    spec:
+      containers:
+        - name: trip-consumer-app
+          image: adamcattermole/trip-consumer-app:latest
+          imagePullPolicy: 'Always'
+          env:
+            - name: BOOTSTRAP_SERVERS
+              value: my-cluster-kafka-bootstrap:9092
+            - name: TOPIC
+              value: cell-profit-topic
+            - name: GROUP_ID
+              value: trip-consumer-app
+            - name: LOG_LEVEL
+              value: "INFO"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app: taxi-example
+    name: trip-consumer-app
+  name: trip-consumer-app
+spec:
+  ports:
+    - name: http
+      port: 8080
+      protocol: TCP
+      targetPort: 8080
+  selector:
+    name: trip-consumer-app
+---
+apiVersion: v1
+kind: Route
+metadata:
+  labels:
+    app: taxi-example
+    name: trip-consumer-app
+  name: trip-consumer-app
+spec:
+  port:
+    targetPort: http
+  to:
+    kind: Service
+    name: trip-consumer-app
