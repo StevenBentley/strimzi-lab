@@ -27,7 +27,6 @@ public class TaxiProducerExample {
             log.info("Sending data ...");
             while (taxiIn.ready()) {
                 producer.write(KafkaProducerRecord.create(config.getTopic(), taxiIn.readLine()));
-//                Thread.sleep(100);
             }
 
             producer.close();
@@ -38,8 +37,6 @@ public class TaxiProducerExample {
         }  catch (IOException e) {
             log.error("IO error occurred reading from file.. {}", args[0]);
             e.printStackTrace();
-//        } catch (InterruptedException e) {
-//            e.printStackTrace();
         }
     }
 }

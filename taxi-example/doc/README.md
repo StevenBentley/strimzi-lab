@@ -39,7 +39,7 @@ The dataset is provided as a CSV file, with the columns detailed below:
 There are several different interesting avenues that could be explored within this dataset, for example:
 
 - We could follow specific taxis to calculate the takings from one taxi throughout the course of a day, or calculate the distance from their last drop off to the next pickup to find out whether they are travelling far without a passenger
-- By using the distance and time of the taxi trip we could calculate the average speed, and use the coordinates of the pickup and dropoff to try to guess the amount of traffic encountered
+- By using the distance and time of the taxi trip we could calculate the average speed, and use the coordinates of the pickup and drop off to try to guess the amount of traffic encountered
 
 We have picked a relatively simple example, where we can calculate the total amount of money (`fare_amount + tip_amount`) taken, based off of the pickup location of the journey. This involves splitting the input data into a grid of different cells, and summing the total amount of money taken for every journey that originates from any cell. To do this we have to consider splitting up processing in a way that ensures the correctness of our output.
 
@@ -51,7 +51,7 @@ Follow the current [Strimzi quickstart documentation](https://strimzi.io/quickst
 
 ## Getting Data into the System
 
-First things first, we need to make our dataset accessible from the cluster. The example connector that has been built relys on hosting the file on an FTP server. For convenience, we use a python library `pyftpdlib` to host the file with the username and password set to `strimzi`.
+First things first, we need to make our dataset accessible from the cluster. The example connector that has been built relies on hosting the file on an FTP server. For convenience, we use a python library `pyftpdlib` to host the file with the username and password set to `strimzi`. For instructions on running the FTP server see [Running the Python FTP server](https://github.com/adam-cattermole/strimzi-lab/tree/add-taxi-example/taxi-example#running-the-python-ftp-server)
 
 We have built a connector, which consists of both the connector itself and tasks. The tasks are invoked based on the configuration of `tasks.max`, and the `poll()` function is called to retrieve data. We use the [FTPConnection.java](../taxi-connect/src/main/java/io/strimzi/util/FTPConnection.java) class, which provides a wrapper to the existing Apache Commons [FTPClient](https://commons.apache.org/proper/commons-net/apidocs/org/apache/commons/net/ftp/FTPClient.html). It should be mentioned however that invoking several tasks to stream data from the same file could result in undesirable behaviour and out of order messages, so we do not use the `maxTasks` parameter in `taskConfigs(..)`.
 
@@ -64,7 +64,7 @@ oc exec -i my-cluster-kafka-0 -- curl -s -X GET \
     http://my-connect-cluster-connect-api:8083/connector-plugins
 ```
 
-KafkaConnect is exposed as a RESTful resource, and so to create a new Connector we can `POST` the following. This creates a new `TaxiSourceConnector`, pointing to the FTP server, and providing the path to the file, exporting it to our new KafkaTopic `taxi-source-topic`. For this to work correctly, the following configuartion needs to be set correctly
+KafkaConnect is exposed as a RESTful resource, and so to create a new Connector we can `POST` the following. This creates a new `TaxiSourceConnector`, pointing to the FTP server, and providing the path to the file, exporting it to our new KafkaTopic `taxi-source-topic`. For this to work correctly, the following configuration needs to be set correctly
 
 `connect.ftp.address` should be set to the IP address of the FTP server.
 
@@ -83,7 +83,7 @@ oc exec -i my-cluster-kafka-0 -- curl -s -X POST \
         "connect.ftp.address": "<ip-address>",
         "connect.ftp.user": "strimzi",
         "connect.ftp.password": "strimzi",
-        "connect.ftp.filepath": "taxi-data/sorteddata.csv",
+        "connect.ftp.filepath": "sorteddata.csv",
         "connect.ftp.topic": "taxi-source-topic",
         "tasks.max": "1",
         "value.converter": "org.apache.kafka.connect.storage.StringConverter"
@@ -105,7 +105,7 @@ We can check that the data is streaming correctly by consuming events from the t
 oc run kafka-consumer -ti --image=strimzi/kafka:0.11.1-kafka-2.1.0 --rm=true --restart=Never -- bin/kafka-console-consumer.sh --bootstrap-server my-cluster-kafka-bootstrap:9092 --topic taxi-source-topic --from-beginning
 ```
 
-For debugging information, see the logs of `my-connect-cluster`.
+For debugging information, see the logs of `my-connect-cluster-connect`.
 
 Lets delete the connector for now and start to look at the rest of the pipeline:
 
@@ -156,8 +156,7 @@ We use an origin point (blue point in the figure) representing the centre of the
   <img src ="assets/taxi-grid.png" alt="Taxi Grid Example"/>
 </p>
 
-
-The additional application logic in the [Cell.java](../trip-convert-app/src/main/java/io/strimzi/trip/Cell.java) class and [TripConvertApp.java](../trip-convert-app/src/main/java/io/strimzi/TripConvertApp.java) perform this calculation, and we set the key of the new records as the `Cell` type, using a new SerDes created in an identical fashion to that of the `tripSerde`. This is important to ensure that every `Trip` corresponding to a particular pickup `Cell` are distributed to the same partition, and in turn the same processing node will receive this event, ensuring correctness and reproducability of the operations.
+The additional application logic in the [Cell.java](../trip-convert-app/src/main/java/io/strimzi/trip/Cell.java) class and [TripConvertApp.java](../trip-convert-app/src/main/java/io/strimzi/TripConvertApp.java) perform this calculation, and we set the key of the new records as the `Cell` type, using a new SerDes created in an identical fashion to that of the `tripSerde`. This is important to ensure that every `Trip` corresponding to a particular pickup `Cell` are distributed to the same partition, and in turn the same processing node will receive this event, ensuring correctness and reproducibility of the operations.
 
 ## Aggregation
 
@@ -216,6 +215,7 @@ We log the information in a window so that we can see the raw data, and use a ge
 <p align="center">
   <img src ="assets/dashboard.png" alt="Screenshot of Dashboard"/>
 </p>
+
 By modifying the starting latitude and longitude, or the cell size (in both [index.html](../trip-consumer-app/src/main/resources/webroot/index.html) and [TripConvertApp.java](../trip-convert-app/src/main/java/io/strimzi/TripConvertApp.java)) you can change the grid that is being worked with. You can also adjust the logic in the aggregate function to calculate some alternative metric from the data.
 
 ## System Design
@@ -223,5 +223,5 @@ By modifying the starting latitude and longitude, or the cell size (in both [ind
 Below you can find a figure showing the overall architecture of the pipeline
 
 <p align=center>
-  <img src="assets/taxi-implementation.png" alt="Appliction Structure">
+  <img src="assets/taxi-implementation.png" alt="Application Structure">
 </p>

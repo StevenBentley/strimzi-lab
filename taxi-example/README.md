@@ -12,7 +12,7 @@ For a more detailed discussion of the implementation details please [follow the 
 
 ## Building
 
-To rebuild the docker containers with any changes, set the `USER` environment variable to the username of the docker hub account the images should be pushed to, and ensure `sorteddata.csv` ([source](<http://www.debs2015.org/call-grand-challenge.html>)) is located in [taxi-producer/src/main/resources](taxi-producer/src/main/resources). Simply run:
+To rebuild the docker containers with any changes, set the `USER` environment variable to the username of the docker hub account the images should be pushed to. If running the simple example, ensure `sorteddata.csv` ([source](<http://www.debs2015.org/call-grand-challenge.html>)) is located in [taxi-producer/src/main/resources](taxi-producer/src/main/resources). To build, simply run the following command from the root directory:
 
 ```bash
 make all
@@ -20,62 +20,84 @@ make all
 
 ## Deployment
 
-There are two separate application deployments, one using KafkaConnect, and the other using a separate docker image to feed in the data. For each a YAML has been provided for both OpenShift and Kubermetes. See the relevant sections below for deployment. The instructions here assume that you have setup your cluster appropriately, following the [strimzi quickstart documentation](<https://strimzi.io/quickstarts/>).
+The instructions here assume that you have setup your cluster appropriately, following the [strimzi quickstart documentation](<https://strimzi.io/quickstarts/>).
 
-### Using Kafka Connector
+There are two separate application deployments, one using KafkaConnect, and the other using a separate docker image to feed in the data. YAML files have been provided for both OpenShift and Kubernetes, use `oc` or `kubectl` as appropriate (in the case of `kubectl` add `-n kafka` to each command also). For the simple deployment (without KafkaConnect), replace all occurrences of `oc-connect.yaml` or `kube-connect.yaml` with `oc.yaml` or `kube.yaml` respectively, and avoid the following sections - [Running the Python FTP server](https://github.com/adam-cattermole/strimzi-lab/tree/add-taxi-example/taxi-example#running-the-python-ftp-server), [Start the Taxi Connector](https://github.com/adam-cattermole/strimzi-lab/tree/add-taxi-example/taxi-example#start-the-taxi-connector), and [Delete the Taxi Connector](https://github.com/adam-cattermole/strimzi-lab/tree/add-taxi-example/taxi-example#delete-the-taxi-connector).
 
-#### Deploy the demo on OpenShift
+### Running the Python FTP server
 
-TODO
-
-#### Deploy the demo on Kubernetes
-
-TODO
-
-### Using Simple Source
-
-#### Deploy the demo on OpenShift
-
-To deploy the application, adjust the image names in [deployment/oc.yaml](deployment/oc.yaml) appropriately, or leave unchanged for the default images.
+Install `pyftpdlib`:
 
 ```bash
-oc create -f deployment/oc.yaml
+pip install pyftpdlib
 ```
 
-Removing the application is as simple as:
+Create a folder at `ftp-server/taxi-data`, and add the `sorteddata.csv` file ([source](<http://www.debs2015.org/call-grand-challenge.html>)).
+
+Run the server:
 
 ```bash
-oc delete all -l app=taxi-example
+cd ftp-server
+sudo python ftp-server.py
+```
+
+### Deploy the Demo on OpenShift
+
+To deploy the application, adjust the image names in [deployment/oc-connect.yaml](deployment/oc-connect.yaml) appropriately, or leave unchanged for the default images.
+
+```bash
+oc create -f deployment/oc-connect.yaml
+```
+
+#### Start the Taxi Connector
+
+Once the connect image is running and listening at the endpoint, and the FTP server is hosting the file, you can deploy the connector to start streaming data:
+
+`connect.ftp.address` should be set to the IP address of the FTP server.
+
+`connect.ftp.filepath` should be set to the path of the file to be read, from the root of the FTP server.
+
+``` bash
+oc exec -i my-cluster-kafka-0 -- curl -s -X POST \
+    -H "Accept:application/json" \
+    -H "Content-Type:application/json" \
+    http://my-connect-cluster-connect-api:8083/connectors -d @- <<'EOF'
+
+{
+    "name": "taxi-connector",
+    "config": {
+        "connector.class": "io.strimzi.TaxiSourceConnector",
+        "connect.ftp.address": "<ip-address>",
+        "connect.ftp.user": "strimzi",
+        "connect.ftp.password": "strimzi",
+        "connect.ftp.filepath": "sorteddata.csv",
+        "connect.ftp.topic": "taxi-source-topic",
+        "tasks.max": "1",
+        "value.converter": "org.apache.kafka.connect.storage.StringConverter"
+    }
+}
+EOF
+```
+
+#### Delete the Taxi Connector
+
+First stop the connector:
+
+```bash
+oc exec -i my-cluster-kafka-0 -- curl -s -X DELETE \
+    http://my-connect-cluster-connect-api:8083/connectors/taxi-connector
+```
+
+#### Remove
+
+Delete the resources:
+
+```bash
+oc delete -f deployment/oc-connect.yaml
 ```
 
 Once completed delete all topics:
 
 ```bash
-oc delete cm -l strimzi.io/kind=topic
-```
-
-#### Deploy the demo on Kubernetes
-
-To deploy the application, adjust the image names in [deployment/k8s.yaml](deployment/k8s.yaml) appropriately, or leave unchanged for the default images.
-
-```bash
-kubectl apply -f deployment/k8s.yaml
-```
-
-You can find a link to the deployed route by running:
-
-```
-minikube service list
-```
-
-Removing all components:
-
-```bash
-kubectl delete all -l app=taxi-example -n kafka
-```
-
-Deleting all topics:
-
-```bash
-kubectl delete kafkatopic --all -n kafka
+oc delete kafkatopic --all
 ```
