@@ -1,0 +1,165 @@
+=== Strimzi Setup
+
+First things first, follow the instructions in the https://strimzi.io/quickstarts/[Strimzi quickstart documentation] to get a Kafka cluster deployed.
+All of the subsequent parts of this documentation assume you have followed these steps.
+
+=== Create a Producer
+
+To get started we need a flow of data streaming into Kafka.
+This could come from a variety of different sources, but for the purposes of this application lets generate sample data, using ``String``s sent with a delay.
+
+We need to configure the Kafka Producer so that it knows how to talk to the
+Kafka brokers (see link:https://strimzi.io/2019/04/17/accessing-kafka-part-1.html[this article] for a more in-depth explanation of how this works), as well as provide information such as the topic name to write to.
+As our application will be containerised, we can abstract this away from the producer code, and read it from environment variables.
+This could be done in an external configuration file, but for this simple example the following will be sufficient.
+
+[source,java,options="nowrap"]
+----
+private static final String DEFAULT_BOOTSTRAP_SERVERS = "localhost:9092";
+private static final int DEFAULT_DELAY = 1000;
+private static final String DEFAULT_TOPIC = "source-topic";
+
+private static final String BOOTSTRAP_SERVERS = "BOOTSTRAP_SERVERS";
+private static final String DELAY = "DELAY";
+private static final String TOPIC = "TOPIC";
+
+private static final String ACKS = "1";
+
+String bootstrapServers = System.getenv().getOrDefault(BOOTSTRAP_SERVERS, DEFAULT_BOOTSTRAP_SERVERS);
+long delay = Long.parseLong(System.getenv().getOrDefault(DELAY, String.valueOf(DEFAULT_DELAY)));
+String topic = System.getenv().getOrDefault(TOPIC, DEFAULT_TOPIC);
+----
+
+We can now create appropriate properties for our Kafka Producer using the
+environment variables (or the defaults).
+
+[source,java,options="nowrap"]
+----
+Properties props = new Properties();
+props.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrapServers);
+props.put(ProducerConfig.ACKS_CONFIG, ACKS);
+props.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, "org.apache.kafka.common.serialization.StringSerializer");
+props.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, "org.apache.kafka.common.serialization.StringSerializer");
+----
+
+Let us create the Producer with the configuration properties.
+
+[source,java,options="nowrap"]
+----
+KafkaProducer<String,String> producer = new KafkaProducer<>(props);
+----
+
+We can now stream the data to the provided `topic`, giving the required `delay` between each message.
+
+[source,java,options="nowrap"]
+----
+int i = 0;
+while (true) {
+    String value = String.format("hello world %d", i);
+    ProducerRecord<String, String> record = new ProducerRecord<>(topic, value);
+    log.info("Sending record {}", record);
+    producer.send(record);
+    i++;
+    try {
+        Thread.sleep(delay);
+    } catch (InterruptedException e) {
+        // sleep interrupted, continue
+    }
+}
+----
+
+The only thing left to do is to package the application into a docker image and push it to docker hub.
+We can then make a new deployment in our Kubernetes cluster from the image, providing the environment variables for our cluster:
+
+[source,yaml,options="nowrap"]
+----
+apiVersion: extensions/v1beta1
+kind: Deployment
+metadata:
+  labels:
+    app: basic-example
+  name: basic-producer
+spec:
+  replicas: 1
+  template:
+    metadata:
+      labels:
+        app: basic-producer
+    spec:
+      containers:
+      - name: basic-producer
+        image: <docker-user>/basic-producer:latest
+        env:
+          - name: BOOTSTRAP_SERVERS
+            value: my-cluster-kafka-bootstrap:9092
+          - name: DELAY
+            value: 1000
+          - name: TOPIC
+            value: source-topic
+----
+
+We can check that data is arriving at our topic by consuming from it:
+
+[source,bash,options="nowrap"]
+----
+kubectl run kafka-consumer -n kafka -ti --image=strimzi/kafka:0.11.1-kafka-2.1.0 --rm=true --restart=Never -- bin/kafka-console-consumer.sh --bootstrap-server my-cluster-kafka-bootstrap:9092 --topic source-topic --from-beginning
+----
+
+=== Create a Streams App
+
+A Kafka Streams application will typically read/source data from one topic, and write/send data to another.
+We can setup the properties and configuration in the same way as before, but this time we need to specify a `SOURCE_TOPIC` and `SINK_TOPIC`.
+
+Let us create the `source` stream:
+
+[source,java,options="nowrap"]
+----
+StreamsBuilder builder = new StreamsBuilder();
+KStream<String, String> source = builder.stream(sourceTopic);
+----
+
+We can now perform an operation on this `source` stream, for example we could create a new stream `filtered`, that only contains records with an even numbered index:
+
+[source,java,options="nowrap"]
+----
+KStream<String, String> filtered = source
+        .filter((key, value) -> {
+            int i = Integer.parseInt(value.split(" ")[2]);
+            return (i % 2) == 0;
+        });
+----
+
+This can then be output to the `sinkTopic`:
+
+[source,java,options="nowrap"]
+----
+filtered.to(sinkTopic);
+----
+
+Lastly we can create the streams object and create a shutdown handler.
+
+[source,java,options="nowrap"]
+----
+final KafkaStreams streams = new KafkaStreams(builder.build(), props);
+final CountDownLatch latch = new CountDownLatch(1);
+
+// attach shutdown handler to catch control-c
+Runtime.getRuntime().addShutdownHook(new Thread("streams-shutdown-hook") {
+    @Override
+    public void run() {
+        streams.close();
+        latch.countDown();
+    }
+});
+
+try {
+    streams.start();
+    latch.await();
+} catch (Throwable e) {
+    System.exit(1);
+}
+System.exit(0);
+----
+
+It is as simple as this to get our streams application running.
+Build the application into a docker image and deploy in a similar way to the producer, and you can watch the `sinkTopic` for the output!

@@ -1,0 +1,20 @@
+= Building a Kafka Streams Application
+Adam Cattermole
+08-04-2019
+:toc:
+:imagesdir: assets
+
+Within this article we describe the steps required to get started with
+building your own Kafka Streams application using Strimzi. We start
+with a simple example and build upon it to create a multi-stage
+pipeline, performing some operations on the data stream, and visualising
+at the consumer.
+
+
+== Basic Example
+include::modules/basic-guide.adoc[]
+
+== Example using real data
+Building upon the basic example above, we will look at the design decisions and considerations while building an application to process a real-life data set.
+
+include::modules/taxi-guide.adoc[]
