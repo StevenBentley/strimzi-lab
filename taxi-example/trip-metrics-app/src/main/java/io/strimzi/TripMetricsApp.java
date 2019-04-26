@@ -24,7 +24,7 @@ public class TripMetricsApp {
 
     public static void main(String[] args) {
         log.info("Start..");
-        TripMetricsConfig config = TripMetricsConfig.fromEnv();
+        TripMetricsConfig config = TripMetricsConfig.fromMap(System.getenv());
         Properties props = TripMetricsConfig.createConsumerProperties(config);
 
         final JsonObjectSerde<Cell> cellSerde = new JsonObjectSerde<>(Cell.class);
@@ -40,11 +40,11 @@ public class TripMetricsApp {
                 .windowedBy(TimeWindows.of(TimeUnit.MINUTES.toMillis(15)))
                 .aggregate(
                         () -> new DoublePair((double) 0, (double) 0),
-                        (key, record, profit) -> {
+                        (key, value, profit) -> {
                             profit.setX(profit.getX() + 1);
-                            profit.setY(profit.getY() + (record.getFareAmount() + record.getTipAmount()));
-//                            profit.setY(profit.getY() + (record.getTripDistance()));
-//                            profit.setY(profit.getY() + (record.getTripDistance()/(record.getTripTime()/3600)));
+                            profit.setY(profit.getY() + (value.getFareAmount() + value.getTipAmount()));
+//                            profit.setY(profit.getY() + (value.getTripDistance()));
+//                            profit.setY(profit.getY() + (value.getTripDistance()/(value.getTripTime()/3600)));
                             return profit;
                         },
                         Materialized.<Cell, DoublePair, WindowStore<Bytes, byte[]>>as("profit-store") /* state store name */
@@ -54,8 +54,8 @@ public class TripMetricsApp {
         windowed.foreach((key, value) -> log.info("key: {}, val:{}", key.key(), value));
 
         KStream<Cell, Double> average = windowed
-                .map((cell, pair) -> new KeyValue<>(cell.key(), (double) Math.round(pair.getY()*100)/100));
-//                .map((cell, pair) -> new KeyValue<>(cell.key(), (double) Math.round((pair.getY()/pair.getX())*100)/100));
+                .map((window, pair) -> new KeyValue<>(window.key(), (double) Math.round(pair.getY()*100)/100));
+//                .map((cell, pair) -> new KeyValue<>(window.key(), (double) Math.round((pair.getY()/pair.getX())*100)/100));
 
         average.foreach((key, value) -> log.info("key: {}, val:{}", key, value));
 

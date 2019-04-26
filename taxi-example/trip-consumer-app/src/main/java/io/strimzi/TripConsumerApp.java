@@ -24,7 +24,7 @@ public class TripConsumerApp {
 
 
     public static void main(String[] args) {
-        TripConsumerConfig config = TripConsumerConfig.fromEnv();
+        TripConsumerConfig config = TripConsumerConfig.fromMap(System.getenv());
         Properties props = TripConsumerConfig.createProperties(config);
 
         Vertx vertx = Vertx.vertx();

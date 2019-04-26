@@ -16,7 +16,7 @@ public class TaxiProducerExample {
     private static final Logger log = LoggerFactory.getLogger(TaxiProducerExample.class);
 
     public static void main(String[] args) {
-        TaxiProducerConfig config = TaxiProducerConfig.fromEnv();
+        TaxiProducerConfig config = TaxiProducerConfig.fromMap(System.getenv());
         Properties props = TaxiProducerConfig.createProperties(config);
 
         Vertx vertx = Vertx.vertx();

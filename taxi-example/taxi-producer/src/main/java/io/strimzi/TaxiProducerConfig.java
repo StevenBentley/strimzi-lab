@@ -2,22 +2,30 @@ package io.strimzi;
 
 import org.apache.kafka.clients.producer.ProducerConfig;
 
+import java.util.Map;
 import java.util.Properties;
 
 public class TaxiProducerConfig {
 
+    private static final String DEFAULT_BOOTSTRAP_SERVERS = "localhost:9092";
+    private static final String DEFAULT_TOPIC = "taxi-source-topic";
+
+    private static final String BOOTSTRAP_SERVERS = "BOOTSTRAP_SERVERS";
+    private static final String TOPIC = "TOPIC";
+
+    private static final String ACKS = "1";
+
     private final String bootstrapServers;
     private final String topic;
-    private static final String ACKS = "1";
 
     public TaxiProducerConfig(String bootstrapServers, String topic) {
         this.bootstrapServers = bootstrapServers;
         this.topic = topic;
     }
 
-    public static TaxiProducerConfig fromEnv() {
-        String bootstrapServers = System.getenv("BOOTSTRAP_SERVERS");
-        String topic = System.getenv("TOPIC");
+    public static TaxiProducerConfig fromMap(Map<String,String> map) {
+        String bootstrapServers = map.getOrDefault(BOOTSTRAP_SERVERS, DEFAULT_BOOTSTRAP_SERVERS);
+        String topic = map.getOrDefault(TOPIC, DEFAULT_TOPIC);
 
         return new TaxiProducerConfig(bootstrapServers, topic);
     }

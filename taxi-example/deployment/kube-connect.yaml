@@ -5,7 +5,7 @@ metadata:
   labels:
       strimzi.io/cluster: my-cluster
 spec:
-  replicas: 1 
+  replicas: 1
   partitions: 12
 ---
 apiVersion: kafka.strimzi.io/v1alpha1
@@ -72,8 +72,6 @@ spec:
             value: taxi-trip-topic
           - name: GROUP_ID
             value: trip-convert-app
-          - name: LOG_LEVEL
-            value: "INFO"
 ---
 apiVersion: extensions/v1beta1
 kind: Deployment
@@ -101,8 +99,6 @@ spec:
               value: cell-profit-topic
             - name: GROUP_ID
               value: trip-metrics-app
-            - name: LOG_LEVEL
-              value: "INFO"
 ---
 
 apiVersion: extensions/v1beta1
@@ -130,8 +126,6 @@ spec:
               value: cell-profit-topic
             - name: GROUP_ID
               value: trip-consumer-app
-            - name: LOG_LEVEL
-              value: "INFO"
 ---
 apiVersion: v1
 kind: Service

@@ -45,7 +45,7 @@ public class TripConvertApp {
     private static final int MAX_CLONG = 72;   // max longitude grid size
 
     public static void main(String[] args) {
-        TripConvertConfig config = TripConvertConfig.fromEnv();
+        TripConvertConfig config = TripConvertConfig.fromMap(System.getenv());
         Properties props = TripConvertConfig.createProperties(config);
 
         final JsonObjectSerde<Cell> cellSerde = new JsonObjectSerde<>(Cell.class);
