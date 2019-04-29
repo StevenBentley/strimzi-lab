@@ -805,6 +805,36 @@ For convenience, we use a python library <code>pyftpdlib</code> to host the file
 For instructions on running the FTP server see <a href="https://github.com/adam-cattermole/strimzi-lab/tree/add-taxi-example/taxi-example#running-the-python-ftp-server">Running the Python FTP server</a>.</p>
 </div>
 <div class="paragraph">
+<p>Before we continue, lets check that we can connect from the cluster to the FTP server running on our host, by deploying a simple container. You should see something similar to the output below</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="highlight nowrap"><code class="language-bash" data-lang="bash">$ kubectl run test-ftp -ti --generator=run-pod/v1 --image=centos:latest --rm=true -n kafka -- /bin/bash
+
+<em>If you don't see a command prompt, try pressing enter.</em>
+
+$ yum install -y ftp
+
+<em>...
+Installed:
+  ftp.x86_64 0:0.17-67.el7
+
+Complete!</em>
+
+$ ftp -pvn &lt;ip-address&gt;
+
+<em>Connected to &lt;ip-address&gt; (&lt;ip-address&gt;).
+220 pyftpdlib 1.5.5 ready.
+Remote system type is UNIX.
+Using binary mode to transfer files.</em>
+
+$ ftp&gt; user strimzi strimzi
+
+<em>331 Username ok, send password.
+230 Login successful.</em></code></pre>
+</div>
+</div>
+<div class="paragraph">
 <p>A Kafka Connector consists of both itself, and tasks (or workers) that perform the retrieval of the data through the <code>poll()</code> function.
 The connector passes configuration over to the workers, and several workers can be invoked as per the <code>tasks.max</code> parameter.
 We have created an <a href="../taxi-connect/src/main/java/io/strimzi/util/FTPConnection.java">FTPConnection</a> class, which provides the functions we require from the Apache Commons <a href="https://commons.apache.org/proper/commons-net/apidocs/org/apache/commons/net/ftp/FTPClient.html">FTPClient</a>.
@@ -1067,7 +1097,7 @@ KStream&lt;Windowed&lt;Cell&gt;, Double&gt; windowed = source
 <h3 id="_consume_and_visualise">Consume and Visualise</h3>
 <div class="paragraph">
 <p>We now have the windowed cell-based metric being output to the last topic, so the final step is to consume and visualise the data.
-For this, we use the Vertx Kafka Consumer to read the data from our topic, and stream it to a JavaScript dashboard using the Vertx EventBus and sockjs (WebSockets). See <a href="../trip-consumer-app/src/main/java/io/strimzi/TripConsumerApp.java">TripConsumerApp</a> for the implementation.</p>
+For this, we use the <a href="https://vertx.io/docs/vertx-kafka-client/java/">Vertx Kafka Client</a> to read the data from our topic, and stream it to a JavaScript dashboard using the <a href="https://vertx.io/docs/vertx-core/java/#event_bus">Vertx EventBus</a> and <a href="https://github.com/sockjs">SockJS</a> (WebSockets). See <a href="../trip-consumer-app/src/main/java/io/strimzi/TripConsumerApp.java">TripConsumerApp</a> for the implementation.</p>
 </div>
 <div class="paragraph">
 <p>This consumer application registers a handler that converts arriving records into a readable JSON format, and publishes it over an outbound EventBus channel.
@@ -1076,12 +1106,12 @@ The JavaScript connects to this channel and registers a handler for all incoming
 <div class="listingblock">
 <div class="content">
 <pre class="highlight nowrap"><code class="language-java" data-lang="java">KafkaConsumer&lt;String, Double&gt; consumer = KafkaConsumer.create(vertx, props, String.class, Double.class);
-        consumer.handler(record -&gt; {
-            JsonObject json = new JsonObject();
-            json.put("key", record.key());
-            json.put("value", record.value());
-            vertx.eventBus().publish("dashboard", json);
-        });</code></pre>
+consumer.handler(record -&gt; {
+    JsonObject json = new JsonObject();
+    json.put("key", record.key());
+    json.put("value", record.value());
+    vertx.eventBus().publish("dashboard", json);
+});</code></pre>
 </div>
 </div>
 <div class="paragraph">
@@ -1114,7 +1144,7 @@ Each of the topics are labelled with the keys and values that they contain.</p>
 </div>
 <div id="footer">
 <div id="footer-text">
-Last updated 2019-04-29 11:09:43 +0100
+Last updated 2019-04-29 13:17:07 +0100
 </div>
 </div>
 </body>

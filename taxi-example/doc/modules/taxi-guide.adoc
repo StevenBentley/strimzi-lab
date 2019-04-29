@@ -61,6 +61,35 @@ We picked this method as it allows our connector to easily communicate with a fi
 For convenience, we use a python library `pyftpdlib` to host the file with the username and password set to `strimzi`.
 For instructions on running the FTP server see link:{url-entrypoint}#running-the-python-ftp-server[Running the Python FTP server].
 
+Before we continue, lets check that we can connect from the cluster to the FTP server running on our host, by deploying a simple container. You should see something similar to the output below
+
+[source,bash,options="nowrap",subs="{markup-in-source},replacements"]
+----
+$ kubectl run test-ftp -ti --generator=run-pod/v1 --image=centos:latest --rm=true -n kafka \-- /bin/bash
+
+_If you don\'t see a command prompt, try pressing enter._
+
+$ yum install -y ftp
+
+_\...
+Installed:
+  ftp.x86_64 0:0.17-67.el7
+
+Complete!_
+
+$ ftp -pvn <ip-address>
+
+_Connected to <ip-address> (<ip-address>).
+220 pyftpdlib 1.5.5 ready.
+Remote system type is UNIX.
+Using binary mode to transfer files._
+
+$ ftp> user strimzi strimzi
+
+_331 Username ok, send password.
+230 Login successful._
+----
+
 A Kafka Connector consists of both itself, and tasks (or workers) that perform the retrieval of the data through the `poll()` function.
 The connector passes configuration over to the workers, and several workers can be invoked as per the `tasks.max` parameter.
 We have created an link:{url-taxi-connect}/util/FTPConnection.java[FTPConnection] class, which provides the functions we require from the Apache Commons link:https://commons.apache.org/proper/commons-net/apidocs/org/apache/commons/net/ftp/FTPClient.html[FTPClient].
@@ -279,7 +308,7 @@ rounded.to(config.getSinkTopic(), Produced.with(cellSerde, Serdes.Double()));
 === Consume and Visualise
 
 We now have the windowed cell-based metric being output to the last topic, so the final step is to consume and visualise the data.
-For this, we use the Vertx Kafka Consumer to read the data from our topic, and stream it to a JavaScript dashboard using the Vertx EventBus and sockjs (WebSockets). See link:{url-trip-consumer}/TripConsumerApp.java[TripConsumerApp] for the implementation.
+For this, we use the link:https://vertx.io/docs/vertx-kafka-client/java/[Vertx Kafka Client] to read the data from our topic, and stream it to a JavaScript dashboard using the link:https://vertx.io/docs/vertx-core/java/#event_bus[Vertx EventBus] and link:https://github.com/sockjs[SockJS] (WebSockets). See link:{url-trip-consumer}/TripConsumerApp.java[TripConsumerApp] for the implementation.
 
 This consumer application registers a handler that converts arriving records into a readable JSON format, and publishes it over an outbound EventBus channel.
 The JavaScript connects to this channel and registers a handler for all incoming messages that performs relevant actions to visualise the data.
@@ -287,12 +316,12 @@ The JavaScript connects to this channel and registers a handler for all incoming
 [source,java,options="nowrap"]
 ----
 KafkaConsumer<String, Double> consumer = KafkaConsumer.create(vertx, props, String.class, Double.class);
-        consumer.handler(record -> {
-            JsonObject json = new JsonObject();
-            json.put("key", record.key());
-            json.put("value", record.value());
-            vertx.eventBus().publish("dashboard", json);
-        });
+consumer.handler(record -> {
+    JsonObject json = new JsonObject();
+    json.put("key", record.key());
+    json.put("value", record.value());
+    vertx.eventBus().publish("dashboard", json);
+});
 ----
 
 We log the information in a window so that the raw metric information can be seen, and use a geographical mapping library (https://leafletjs.com/[Leaflet]) to draw the original cells, modifying the opacity based on the value of the metric.
