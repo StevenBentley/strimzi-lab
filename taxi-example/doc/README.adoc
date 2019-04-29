@@ -3,6 +3,7 @@ Adam Cattermole
 08-04-2019
 :toc:
 :imagesdir: assets
+:markup-in-source: verbatim,quotes
 
 Within this article we describe the steps required to get started with
 building your own Kafka Streams application using Strimzi. We start

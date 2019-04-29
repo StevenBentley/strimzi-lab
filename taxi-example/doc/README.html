@@ -594,7 +594,12 @@ spec:
 </div>
 <div class="listingblock">
 <div class="content">
-<pre class="highlight nowrap"><code class="language-bash" data-lang="bash">kubectl run kafka-consumer -n kafka -ti --image=strimzi/kafka:0.11.1-kafka-2.1.0 --rm=true --restart=Never -- bin/kafka-console-consumer.sh --bootstrap-server my-cluster-kafka-bootstrap:9092 --topic source-topic --from-beginning</code></pre>
+<pre class="highlight nowrap"><code class="language-bash" data-lang="bash">$ kubectl run kafka-consumer -n kafka -ti --image=strimzi/kafka:0.11.1-kafka-2.1.0 --rm=true --restart=Never -- bin/kafka-console-consumer.sh --bootstrap-server my-cluster-kafka-bootstrap:9092 --topic source-topic --from-beginning
+
+<em>hello world 0
+hello world 1
+hello world 2
+...</em></code></pre>
 </div>
 </div>
 </div>
@@ -814,8 +819,10 @@ We can then deploy the Kafka Connect cluster, using the configuration from the <
 </div>
 <div class="listingblock">
 <div class="content">
-<pre class="highlight nowrap"><code class="language-bash" data-lang="bash">kubectl exec -i my-cluster-kafka-0 -n kafka -- curl -s -X GET \
-    http://my-connect-cluster-connect-api:8083/connector-plugins</code></pre>
+<pre class="highlight nowrap"><code class="language-bash" data-lang="bash">$ kubectl exec -c kafka -i my-cluster-kafka-0 -n kafka -- curl -s -X GET \
+    http://my-connect-cluster-connect-api:8083/connector-plugins
+
+<em>[{"class":"io.strimzi.TaxiSourceConnector","type":"source","version":"1.0-SNAPSHOT"},{"class":"org.apache.kafka.connect.file.FileStreamSinkConnector","type":"sink","version":"2.1.0"},{"class":"org.apache.kafka.connect.file.FileStreamSourceConnector","type":"source","version":"2.1.0"}]</em></code></pre>
 </div>
 </div>
 <div class="paragraph">
@@ -848,7 +855,7 @@ For this to work correctly, the following configuration options must be set corr
 </div>
 <div class="listingblock">
 <div class="content">
-<pre class="highlight nowrap"><code class="language-bash" data-lang="bash">kubectl exec -i my-cluster-kafka-0 -n kafka -- curl -s -X POST \
+<pre class="highlight nowrap"><code class="language-bash" data-lang="bash">$ kubectl exec -c kafka -i my-cluster-kafka-0 -n kafka -- curl -s -X POST \
     -H "Accept:application/json" \
     -H "Content-Type:application/json" \
     http://my-connect-cluster-connect-api:8083/connectors -d @- &lt;&lt;'EOF'
@@ -866,7 +873,9 @@ For this to work correctly, the following configuration options must be set corr
         "value.converter": "org.apache.kafka.connect.storage.StringConverter"
     }
 }
-EOF</code></pre>
+EOF
+
+<em>{"name":"taxi-connector","config":{"connector.class":"io.strimzi.TaxiSourceConnector","connect.ftp.address":"10.56.222.49","connect.ftp.user":"strimzi","connect.ftp.password":"strimzi","connect.ftp.filepath":"sorteddata.csv","connect.ftp.topic":"taxi-source-topic","tasks.max":"1","value.converter":"org.apache.kafka.connect.storage.StringConverter","name":"taxi-connector"},"tasks":[],"type":null}</em></code></pre>
 </div>
 </div>
 <div class="paragraph">
@@ -874,8 +883,10 @@ EOF</code></pre>
 </div>
 <div class="listingblock">
 <div class="content">
-<pre class="highlight nowrap"><code class="language-bash" data-lang="bash">kubectl exec -i my-cluster-kafka-0 -n kafka -- curl -s -X GET \
-    http://my-connect-cluster-connect-api:8083/connectors</code></pre>
+<pre class="highlight nowrap"><code class="language-bash" data-lang="bash">$ kubectl exec -c kafka -i my-cluster-kafka-0 -n kafka -- curl -s -X GET \
+    http://my-connect-cluster-connect-api:8083/connectors
+
+<em>["taxi-connector"]</em></code></pre>
 </div>
 </div>
 <div class="paragraph">
@@ -883,7 +894,14 @@ EOF</code></pre>
 </div>
 <div class="listingblock">
 <div class="content">
-<pre class="highlight nowrap"><code class="language-bash" data-lang="bash">kubectl run kafka-consumer -ti --image=strimzi/kafka:0.11.1-kafka-2.1.0 --rm=true --restart=Never -n kafka -- bin/kafka-console-consumer.sh --bootstrap-server my-cluster-kafka-bootstrap:9092 --topic taxi-source-topic --from-beginning</code></pre>
+<pre class="highlight nowrap"><code class="language-bash" data-lang="bash">$ kubectl run kafka-consumer -ti --image=strimzi/kafka:0.11.1-kafka-2.1.0 --rm=true --restart=Never -n kafka -- bin/kafka-console-consumer.sh --bootstrap-server my-cluster-kafka-bootstrap:9092 --topic taxi-source-topic --from-beginning
+
+<em>If you don't see a command prompt, try pressing enter.
+OpenJDK 64-Bit Server VM warning: If the number of processors is expected to increase from one, then you should configure the number of parallel GC threads appropriately using -XX:ParallelGCThreads=N
+07290D3599E7A0D62097A346EFCC1FB5,E7750A37CAB07D0DFF0AF7E3573AC141,2013-01-01 00:00:00,2013-01-01 00:02:00,120,0.44,-73.956528,40.716976,-73.962440,40.715008,CSH,3.50,0.50,0.50,0.00,0.00,4.50
+22D70BF00EEB0ADC83BA8177BB861991,3FF2709163DE7036FCAA4E5A3324E4BF,2013-01-01 00:02:00,2013-01-01 00:02:00,0,0.00,0.000000,0.000000,0.000000,0.000000,CSH,27.00,0.00,0.50,0.00,0.00,27.50
+0EC22AAF491A8BD91F279350C2B010FD,778C92B26AE78A9EBDF96B49C67E4007,2013-01-01 00:01:00,2013-01-01 00:03:00,120,0.71,-73.973145,40.752827,-73.965897,40.760445,CSH,4.00,0.50,0.50,0.00,0.00,5.00
+...</em></code></pre>
 </div>
 </div>
 <div class="paragraph">
@@ -894,7 +912,7 @@ EOF</code></pre>
 </div>
 <div class="listingblock">
 <div class="content">
-<pre class="highlight nowrap"><code class="language-bash" data-lang="bash">kubectl exec -i my-cluster-kafka-0 -n kafka -- curl -s -X DELETE \
+<pre class="highlight nowrap"><code class="language-bash" data-lang="bash">$ kubectl exec -c kafka -i my-cluster-kafka-0 -n kafka -- curl -s -X DELETE \
     http://my-connect-cluster-connect-api:8083/connectors/taxi-connector</code></pre>
 </div>
 </div>
@@ -1096,7 +1114,7 @@ Each of the topics are labelled with the keys and values that they contain.</p>
 </div>
 <div id="footer">
 <div id="footer-text">
-Last updated 2019-04-26 13:18:44 +0100
+Last updated 2019-04-29 11:09:43 +0100
 </div>
 </div>
 </body>

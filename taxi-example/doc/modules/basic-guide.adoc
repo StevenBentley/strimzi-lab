@@ -100,9 +100,14 @@ spec:
 
 We can check that data is arriving at our topic by consuming from it:
 
-[source,bash,options="nowrap"]
+[source,bash,options="nowrap",subs="{markup-in-source}"]
 ----
-kubectl run kafka-consumer -n kafka -ti --image=strimzi/kafka:0.11.1-kafka-2.1.0 --rm=true --restart=Never -- bin/kafka-console-consumer.sh --bootstrap-server my-cluster-kafka-bootstrap:9092 --topic source-topic --from-beginning
+$ kubectl run kafka-consumer -n kafka -ti --image=strimzi/kafka:0.11.1-kafka-2.1.0 --rm=true --restart=Never -- bin/kafka-console-consumer.sh --bootstrap-server my-cluster-kafka-bootstrap:9092 --topic source-topic --from-beginning
+
+_hello world 0
+hello world 1
+hello world 2
+..._
 ----
 
 === Create a Streams App

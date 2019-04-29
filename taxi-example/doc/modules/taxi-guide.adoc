@@ -71,10 +71,13 @@ We can then deploy the Kafka Connect cluster, using the configuration from the l
 
 KafkaConnect is exposed as a RESTful resource, and so to check which connector plugins are present we can run the following `GET` request:
 
-[source,bash,options="nowrap"]
+[source,bash,options="nowrap",subs="{markup-in-source}"]
 ----
-kubectl exec -i my-cluster-kafka-0 -n kafka -- curl -s -X GET \
+$ kubectl exec -c kafka -i my-cluster-kafka-0 -n kafka -- curl -s -X GET \
     http://my-connect-cluster-connect-api:8083/connector-plugins
+
+_[{"class":"io.strimzi.TaxiSourceConnector","type":"source","version":"1.0-SNAPSHOT"},{"class":"org.apache.kafka.connect.file.FileStreamSinkConnector","type":"sink","version":"2.1.0"},{"class":"org.apache.kafka.connect.file.FileStreamSourceConnector","type":"source","version":"2.1.0"}]_
+
 ----
 
 Similarly, to create a new connector we can `POST` the `JSON` configuration, as shown in the example below.
@@ -91,9 +94,9 @@ Optional configuration:
 
 * `connect.ftp.backoff.ms` - Backoff time in milliseconds between connection attempts. (default: 10000ms)
 
-[source,bash,options="nowrap"]
+[source,bash,options="nowrap",subs="{markup-in-source}"]
 ----
-kubectl exec -i my-cluster-kafka-0 -n kafka -- curl -s -X POST \
+$ kubectl exec -c kafka -i my-cluster-kafka-0 -n kafka -- curl -s -X POST \
     -H "Accept:application/json" \
     -H "Content-Type:application/json" \
     http://my-connect-cluster-connect-api:8083/connectors -d @- <<'EOF'
@@ -112,21 +115,32 @@ kubectl exec -i my-cluster-kafka-0 -n kafka -- curl -s -X POST \
     }
 }
 EOF
+
+_{"name":"taxi-connector","config":{"connector.class":"io.strimzi.TaxiSourceConnector","connect.ftp.address":"10.56.222.49","connect.ftp.user":"strimzi","connect.ftp.password":"strimzi","connect.ftp.filepath":"sorteddata.csv","connect.ftp.topic":"taxi-source-topic","tasks.max":"1","value.converter":"org.apache.kafka.connect.storage.StringConverter","name":"taxi-connector"},"tasks":[],"type":null}_
 ----
 
 We can `GET` the current deployed connectors:
 
-[source,bash,options="nowrap"]
+[source,bash,options="nowrap",subs="{markup-in-source}"]
 ----
-kubectl exec -i my-cluster-kafka-0 -n kafka -- curl -s -X GET \
+$ kubectl exec -c kafka -i my-cluster-kafka-0 -n kafka -- curl -s -X GET \
     http://my-connect-cluster-connect-api:8083/connectors
+
+_["taxi-connector"]_
 ----
 
 Lets check that the data is streaming to the topic:
 
-[source,bash,options="nowrap"]
+[source,bash,options="nowrap",subs="{markup-in-source},replacements"]
 ----
-kubectl run kafka-consumer -ti --image=strimzi/kafka:0.11.1-kafka-2.1.0 --rm=true --restart=Never -n kafka -- bin/kafka-console-consumer.sh --bootstrap-server my-cluster-kafka-bootstrap:9092 --topic taxi-source-topic --from-beginning
+$ kubectl run kafka-consumer -ti --image=strimzi/kafka:0.11.1-kafka-2.1.0 --rm=true --restart=Never -n kafka \-- bin/kafka-console-consumer.sh --bootstrap-server my-cluster-kafka-bootstrap:9092 --topic taxi-source-topic --from-beginning
+
+_If you don\'t see a command prompt, try pressing enter.
+OpenJDK 64-Bit Server VM warning: If the number of processors is expected to increase from one, then you should configure the number of parallel GC threads appropriately using -XX:ParallelGCThreads=N
+07290D3599E7A0D62097A346EFCC1FB5,E7750A37CAB07D0DFF0AF7E3573AC141,2013-01-01 00:00:00,2013-01-01 00:02:00,120,0.44,-73.956528,40.716976,-73.962440,40.715008,CSH,3.50,0.50,0.50,0.00,0.00,4.50
+22D70BF00EEB0ADC83BA8177BB861991,3FF2709163DE7036FCAA4E5A3324E4BF,2013-01-01 00:02:00,2013-01-01 00:02:00,0,0.00,0.000000,0.000000,0.000000,0.000000,CSH,27.00,0.00,0.50,0.00,0.00,27.50
+0EC22AAF491A8BD91F279350C2B010FD,778C92B26AE78A9EBDF96B49C67E4007,2013-01-01 00:01:00,2013-01-01 00:03:00,120,0.71,-73.973145,40.752827,-73.965897,40.760445,CSH,4.00,0.50,0.50,0.00,0.00,5.00
+\..._
 ----
 
 For debugging information, see the logs of `my-connect-cluster-connect`.
@@ -135,7 +149,7 @@ While we work on the rest of the application we can stop the plugin:
 
 [source,bash,options="nowrap"]
 ----
-kubectl exec -i my-cluster-kafka-0 -n kafka -- curl -s -X DELETE \
+$ kubectl exec -c kafka -i my-cluster-kafka-0 -n kafka -- curl -s -X DELETE \
     http://my-connect-cluster-connect-api:8083/connectors/taxi-connector
 ----
 

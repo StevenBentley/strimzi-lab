@@ -15,7 +15,7 @@ For a more detailed discussion of the implementation details please [follow the 
 To rebuild the docker containers with any changes, set the `USER` environment variable to the username of the docker hub account the images should be pushed to. If running the simple example, ensure `sorteddata.csv` ([source](<http://www.debs2015.org/call-grand-challenge.html>)) is located in [taxi-producer/src/main/resources](taxi-producer/src/main/resources). To build, simply run the following command from the root directory:
 
 ```bash
-make all
+$ make all
 ```
 
 ## Deployment
@@ -29,7 +29,7 @@ There are two separate application deployments, one using KafkaConnect, and the 
 Install `pyftpdlib`:
 
 ```bash
-pip install pyftpdlib
+$ pip install pyftpdlib
 ```
 
 Create a folder at `ftp-server/taxi-data`, and add the `sorteddata.csv` file ([source](<http://www.debs2015.org/call-grand-challenge.html>)).
@@ -37,8 +37,13 @@ Create a folder at `ftp-server/taxi-data`, and add the `sorteddata.csv` file ([s
 Run the server:
 
 ```bash
-cd ftp-server
-sudo python ftp-server.py
+$ cd ftp-server
+$ sudo python ftp-server.py
+
+[I 2019-04-08 09:00:00] >>> starting FTP server on :::21, pid=75993 <<<
+[I 2019-04-08 09:00:00] concurrency model: async
+[I 2019-04-08 09:00:00] masquerade (NAT) address: None
+[I 2019-04-08 09:00:00] passive ports: None
 ```
 
 ### Deploy the Demo on OpenShift
@@ -46,7 +51,7 @@ sudo python ftp-server.py
 To deploy the application, adjust the image names in [deployment/oc-connect.yaml](deployment/oc-connect.yaml) appropriately, or leave unchanged for the default images.
 
 ```bash
-oc create -f deployment/oc-connect.yaml
+$ oc create -f deployment/oc-connect.yaml
 ```
 
 #### Start the Taxi Connector
@@ -58,7 +63,7 @@ Once the connect image is running and listening at the endpoint, and the FTP ser
 `connect.ftp.filepath` should be set to the path of the file to be read, from the root of the FTP server.
 
 ``` bash
-oc exec -i my-cluster-kafka-0 -- curl -s -X POST \
+$ oc exec -i my-cluster-kafka-0 -- curl -s -X POST \
     -H "Accept:application/json" \
     -H "Content-Type:application/json" \
     http://my-connect-cluster-connect-api:8083/connectors -d @- <<'EOF'
@@ -84,7 +89,7 @@ EOF
 First stop the connector:
 
 ```bash
-oc exec -i my-cluster-kafka-0 -- curl -s -X DELETE \
+$ oc exec -i my-cluster-kafka-0 -- curl -s -X DELETE \
     http://my-connect-cluster-connect-api:8083/connectors/taxi-connector
 ```
 
@@ -93,11 +98,11 @@ oc exec -i my-cluster-kafka-0 -- curl -s -X DELETE \
 Delete the resources:
 
 ```bash
-oc delete -f deployment/oc-connect.yaml
+$ oc delete -f deployment/oc-connect.yaml
 ```
 
 Once completed delete all topics:
 
 ```bash
-oc delete kafkatopic --all
+$ oc delete kafkatopic --all
 ```
