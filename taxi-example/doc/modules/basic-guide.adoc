@@ -112,7 +112,7 @@ hello world 2
 
 === Create a Streams App
 
-A Kafka Streams application will typically read/source data from one topic, and write/send data to another.
+A Kafka Streams application will typically read/source data from one or more input topics, and write/send data to one or more output topics, acting as a stream processor.
 We can setup the properties and configuration in the same way as before, but this time we need to specify a `SOURCE_TOPIC` and `SINK_TOPIC`.
 
 Let us create the `source` stream:
