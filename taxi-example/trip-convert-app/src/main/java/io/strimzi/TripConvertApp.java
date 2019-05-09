@@ -2,8 +2,14 @@ package io.strimzi;
 
 import io.jaegertracing.Configuration;
 import io.jaegertracing.Configuration.SamplerConfiguration;
+import io.opentracing.Scope;
+import io.opentracing.Span;
+import io.opentracing.SpanContext;
 import io.opentracing.Tracer;
+import io.opentracing.contrib.kafka.TracingKafkaUtils;
 import io.opentracing.contrib.kafka.streams.TracingKafkaClientSupplier;
+import io.opentracing.log.Fields;
+import io.opentracing.tag.Tags;
 import io.opentracing.util.GlobalTracer;
 import io.strimzi.json.JsonObjectSerde;
 import io.strimzi.trip.Cell;
@@ -18,15 +24,14 @@ import org.apache.kafka.streams.StreamsBuilder;
 import org.apache.kafka.streams.kstream.Consumed;
 import org.apache.kafka.streams.kstream.KStream;
 import org.apache.kafka.streams.kstream.Produced;
+import org.apache.kafka.streams.kstream.Transformer;
+import org.apache.kafka.streams.processor.ProcessorContext;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.text.ParseException;
 import java.text.SimpleDateFormat;
-import java.util.Date;
-import java.util.EnumMap;
-import java.util.Map;
-import java.util.Properties;
+import java.util.*;
 import java.util.concurrent.CountDownLatch;
 
 
@@ -66,16 +71,42 @@ public class TripConvertApp {
 
         StreamsBuilder builder = new StreamsBuilder();
         KStream<String, String> source = builder.stream(config.getSourceTopic(), Consumed.with(Serdes.String(), Serdes.String()));
-        KStream<Cell, Trip> mapped = source
-                .map((key, value) -> {
-                    log.info("Received message:");
-                    log.info("\tvalue: {}", value);
-                    Trip trip = constructTripFromString(value);
-                    return new KeyValue<>(new Cell(START_CELL_ORIGIN, CELL_LENGTH, trip.getPickupLoc()),trip);
-                })
-                .filter((cell, trip) -> cell.inBounds(MAX_CLAT, MAX_CLONG));
 
-        mapped.to(config.getSinkTopic(), Produced.with(cellSerde, tripSerde));
+        KStream<Cell, Trip> mapped = source.transform(() -> new Transformer<String, String, KeyValue<Cell, Trip>>() {
+            ProcessorContext context;
+            @Override
+            public void init(ProcessorContext processorContext) {
+                this.context = processorContext;
+            }
+
+            @Override
+            public KeyValue<Cell, Trip> transform(String key, String value) {
+                SpanContext spanContext = TracingKafkaUtils.extractSpanContext(context.headers(), tracer);
+                    Span span = tracer.buildSpan("transform.map").asChildOf(spanContext).start();
+                    try (Scope scope = tracer.scopeManager().activate(span)) {
+                        log.info("Received message:");
+                        log.info("\tvalue: {}", value);
+                        Trip trip = constructTripFromString(value);
+                        return new KeyValue<>(new Cell(START_CELL_ORIGIN, CELL_LENGTH, trip.getPickupLoc()), trip);
+                    } catch (Exception ex) {
+                        Tags.ERROR.set(span, true);
+                        Map<String, Object> map = new HashMap<>();
+                        map.put(Fields.EVENT, "error");
+                        map.put(Fields.ERROR_OBJECT, ex);
+                        map.put(Fields.MESSAGE, ex.getMessage());
+                        span.log(map);
+                    } finally {
+                        span.finish();
+                    }
+                    return null;
+            }
+
+            @Override
+            public void close() {}
+        });
+
+        mapped.filter((cell, trip) -> cell.inBounds(MAX_CLAT, MAX_CLONG))
+            .to(config.getSinkTopic(), Produced.with(cellSerde, tripSerde));
 
         final KafkaStreams streams = new KafkaStreams(builder.build(), props, supplier);
         final CountDownLatch latch = new CountDownLatch(1);

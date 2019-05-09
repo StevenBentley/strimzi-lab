@@ -9,19 +9,23 @@ import io.strimzi.trip.Cell;
 import io.strimzi.trip.DoublePair;
 import io.strimzi.trip.Trip;
 import org.apache.kafka.common.serialization.Serdes;
-import org.apache.kafka.common.utils.Bytes;
 import org.apache.kafka.streams.KafkaClientSupplier;
 import org.apache.kafka.streams.KafkaStreams;
 import org.apache.kafka.streams.KeyValue;
-import org.apache.kafka.streams.StreamsBuilder;
-import org.apache.kafka.streams.kstream.*;
+import org.apache.kafka.streams.Topology;
+import org.apache.kafka.streams.kstream.Windowed;
+import org.apache.kafka.streams.processor.Processor;
+import org.apache.kafka.streams.processor.ProcessorContext;
+import org.apache.kafka.streams.state.KeyValueIterator;
+import org.apache.kafka.streams.state.KeyValueStore;
+import org.apache.kafka.streams.state.Stores;
 import org.apache.kafka.streams.state.WindowStore;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.time.Duration;
 import java.util.Properties;
 import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.TimeUnit;
 
 public class TripMetricsApp {
     private static Logger log = LoggerFactory.getLogger(TripMetricsApp.class);
@@ -43,33 +47,77 @@ public class TripMetricsApp {
         final JsonObjectSerde<Trip> tripSerde = new JsonObjectSerde<>(Trip.class);
         final JsonObjectSerde<DoublePair> pairSerde = new JsonObjectSerde<>(DoublePair.class);
 
-        StreamsBuilder builder = new StreamsBuilder();
+        Topology topology = new Topology();
 
-        KStream<Cell, Trip> source = builder.stream(config.getSourceTopic(), Consumed.with(cellSerde, tripSerde));
-        KStream<Windowed<Cell>, DoublePair> windowed = source
-                .groupByKey(Grouped.with(cellSerde, tripSerde))
-                .windowedBy(TimeWindows.of(TimeUnit.MINUTES.toMillis(15)))
-                .aggregate(
-                        () -> new DoublePair((double) 0, (double) 0),
-                        (key, value, profit) -> {
-                            profit.setX(profit.getX() + 1);
-                            profit.setY(profit.getY() + (value.getFareAmount() + value.getTipAmount()));
-                            return profit;
-                        },
-                        Materialized.<Cell, DoublePair, WindowStore<Bytes, byte[]>>as("profit-store") /* state store name */
-                                .withValueSerde(pairSerde))
-                .toStream();
+        topology.addSource("SOURCE", cellSerde.deserializer(), tripSerde.deserializer(), config.getSourceTopic())
+            .addProcessor("PROCESS-1", () -> new Processor<Cell,Trip>() {
+                ProcessorContext context;
+                WindowStore<Cell, Trip> windowStore;
 
-        windowed.foreach((key, value) -> log.info("key: {}, val:{}", key.key(), value));
+                @Override
+                @SuppressWarnings("unchecked")
+                public void init(ProcessorContext processorContext) {
+                    this.context = processorContext;
+                    this.windowStore = (WindowStore<Cell, Trip>) processorContext.getStateStore("profit-window");
+                }
 
-        KStream<Cell, Double> average = windowed
-                .map((window, pair) -> new KeyValue<>(window.key(), (double) Math.round(pair.getY()*100)/100));
+                @Override
+                public void process(Cell cell, Trip trip) {
+                    this.windowStore.put(cell, trip, trip.getPickupDatetime().getTime());
+                    KeyValueIterator<Windowed<Cell>, Trip> iter = this.windowStore.all();
 
-        average.foreach((key, value) -> log.info("key: {}, val:{}", key, value));
+                    while(iter.hasNext()) {
+                        KeyValue<Windowed<Cell>, Trip> entry = iter.next();
+                        this.context.forward(entry.key, entry.value);
+                    }
+                }
 
-        average.to(config.getSinkTopic(), Produced.with(cellSerde, Serdes.Double()));
+                @Override
+                public void close() {}
+            }, "SOURCE")
 
-        final KafkaStreams streams = new KafkaStreams(builder.build(), props, supplier);
+            .addStateStore(Stores.windowStoreBuilder(
+                    Stores.persistentWindowStore("profit-window", Duration.ofDays(1),Duration.ofMinutes(15),false),
+                    cellSerde, tripSerde), "PROCESS-1")
+
+            .addProcessor("PROCESS-2", () -> new Processor<Windowed<Cell>, Trip>() {
+                ProcessorContext context;
+                KeyValueStore<String, DoublePair> keyValueStore;
+
+                @Override
+                @SuppressWarnings("unchecked")
+                public void init(ProcessorContext processorContext) {
+                    this.context = processorContext;
+                    this.keyValueStore = (KeyValueStore<String, DoublePair>) processorContext.getStateStore("profit-aggregate");
+                }
+
+                @Override
+                public void process(Windowed<Cell> window, Trip trip) {
+                    String winName = window.window().toString();
+                    if (keyValueStore.get(winName) == null) {
+                        keyValueStore.put(winName, new DoublePair((double) 1, (trip.getFareAmount() + trip.getTipAmount())));
+                    } else {
+                        DoublePair profit = keyValueStore.get(winName);
+                        profit.setX(profit.getX() + 1);
+                        profit.setY(profit.getY() + (trip.getFareAmount() + trip.getTipAmount()));
+                        keyValueStore.put(winName, profit);
+                        this.context.forward(window.key(), profit);
+                    }
+                }
+
+                @Override
+                public void close() {
+
+                }
+            }, "PROCESS-1")
+
+        .addStateStore(Stores.keyValueStoreBuilder(
+                Stores.persistentKeyValueStore("profit-aggregate"),
+                Serdes.String(), pairSerde), "PROCESS-2");
+
+        topology.addSink("SINK",config.getSinkTopic(), cellSerde.serializer(), pairSerde.serializer(), "PROCESS-2");
+
+        final KafkaStreams streams = new KafkaStreams(topology, props, supplier);
         final CountDownLatch latch = new CountDownLatch(1);
 
         // attach shutdown handler to catch control-c
