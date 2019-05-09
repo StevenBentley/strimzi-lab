@@ -1,5 +1,6 @@
 package io.strimzi;
 
+import io.opentracing.contrib.kafka.TracingConsumerInterceptor;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
 
 import java.util.Map;
@@ -44,6 +45,7 @@ public class TripConsumerConfig {
         props.put(ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG, ENABLE_AUTO_COMMIT);
         props.put(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, "org.apache.kafka.common.serialization.StringDeserializer");
         props.put(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, "org.apache.kafka.common.serialization.DoubleDeserializer");
+        props.put(ConsumerConfig.INTERCEPTOR_CLASSES_CONFIG, TracingConsumerInterceptor.class.getName());
 
         return props;
     }

@@ -1,5 +1,6 @@
 package io.strimzi;
 
+import io.opentracing.contrib.kafka.TracingProducerInterceptor;
 import org.apache.kafka.clients.producer.ProducerConfig;
 
 import java.util.Map;
@@ -36,6 +37,7 @@ public class TaxiProducerConfig {
         props.put(ProducerConfig.ACKS_CONFIG, ACKS);
         props.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, "org.apache.kafka.common.serialization.StringSerializer");
         props.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, "org.apache.kafka.common.serialization.StringSerializer");
+        props.put(ProducerConfig.INTERCEPTOR_CLASSES_CONFIG, TracingProducerInterceptor.class.getName());
 
         return props;
     }

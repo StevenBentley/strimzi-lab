@@ -49,6 +49,12 @@ spec:
             value: my-cluster-kafka-bootstrap:9092
           - name: TOPIC
             value: taxi-source-topic
+          - name: JAEGER_SERVICE_NAME
+            value: taxi-producer
+          - name: JAEGER_AGENT_HOST
+            value: my-jaeger-agent
+          - name: JAEGER_AGENT_PORT
+            value: "6831"
 ---
 apiVersion: extensions/v1beta1
 kind: Deployment
@@ -76,6 +82,12 @@ spec:
             value: taxi-trip-topic
           - name: GROUP_ID
             value: trip-convert-app
+          - name: JAEGER_SERVICE_NAME
+            value: trip-convert
+          - name: JAEGER_AGENT_HOST
+            value: my-jaeger-agent
+          - name: JAEGER_AGENT_PORT
+            value: "6831"
 ---
 apiVersion: extensions/v1beta1
 kind: Deployment
@@ -103,6 +115,12 @@ spec:
               value: cell-profit-topic
             - name: GROUP_ID
               value: trip-metrics-app
+            - name: JAEGER_SERVICE_NAME
+              value: trip-metrics
+            - name: JAEGER_AGENT_HOST
+              value: my-jaeger-agent
+            - name: JAEGER_AGENT_PORT
+              value: "6831"
 ---
 
 apiVersion: extensions/v1beta1
@@ -130,6 +148,12 @@ spec:
               value: cell-profit-topic
             - name: GROUP_ID
               value: trip-consumer-app
+            - name: JAEGER_SERVICE_NAME
+              value: trip-consumer
+            - name: JAEGER_AGENT_HOST
+              value: my-jaeger-agent
+            - name: JAEGER_AGENT_PORT
+              value: "6831"
 ---
 apiVersion: v1
 kind: Service

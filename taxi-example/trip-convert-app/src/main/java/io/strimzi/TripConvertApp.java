@@ -1,15 +1,21 @@
 package io.strimzi;
 
+import io.jaegertracing.Configuration;
+import io.jaegertracing.Configuration.SamplerConfiguration;
+import io.opentracing.Tracer;
+import io.opentracing.contrib.kafka.streams.TracingKafkaClientSupplier;
+import io.opentracing.util.GlobalTracer;
+import io.strimzi.json.JsonObjectSerde;
 import io.strimzi.trip.Cell;
 import io.strimzi.trip.Location;
 import io.strimzi.trip.Trip;
 import io.strimzi.trip.TripFields;
-import io.strimzi.json.JsonObjectSerde;
 import org.apache.kafka.common.serialization.Serdes;
-import org.apache.kafka.streams.kstream.Consumed;
+import org.apache.kafka.streams.KafkaClientSupplier;
 import org.apache.kafka.streams.KafkaStreams;
 import org.apache.kafka.streams.KeyValue;
 import org.apache.kafka.streams.StreamsBuilder;
+import org.apache.kafka.streams.kstream.Consumed;
 import org.apache.kafka.streams.kstream.KStream;
 import org.apache.kafka.streams.kstream.Produced;
 import org.slf4j.Logger;
@@ -43,6 +49,15 @@ public class TripConvertApp {
     private static final int MAX_CLONG = 72;   // max longitude grid size
 
     public static void main(String[] args) {
+        SamplerConfiguration sampler = new SamplerConfiguration();
+        sampler.withType("const");
+        sampler.withParam(1);
+
+        Tracer tracer = Configuration.fromEnv().withSampler(sampler).getTracer();
+        GlobalTracer.registerIfAbsent(tracer);
+
+        KafkaClientSupplier supplier = new TracingKafkaClientSupplier(tracer);
+
         TripConvertConfig config = TripConvertConfig.fromMap(System.getenv());
         Properties props = TripConvertConfig.createProperties(config);
 
@@ -62,7 +77,7 @@ public class TripConvertApp {
 
         mapped.to(config.getSinkTopic(), Produced.with(cellSerde, tripSerde));
 
-        final KafkaStreams streams = new KafkaStreams(builder.build(), props);
+        final KafkaStreams streams = new KafkaStreams(builder.build(), props, supplier);
         final CountDownLatch latch = new CountDownLatch(1);
 
         // attach shutdown handler to catch control-c
