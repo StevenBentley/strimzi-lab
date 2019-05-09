@@ -6,7 +6,7 @@ import io.strimzi.trip.Trip;
 import io.strimzi.json.JsonObjectSerde;
 import org.apache.kafka.common.serialization.Serdes;
 import org.apache.kafka.common.utils.Bytes;
-import org.apache.kafka.streams.Consumed;
+import org.apache.kafka.streams.kstream.Consumed;
 import org.apache.kafka.streams.KafkaStreams;
 import org.apache.kafka.streams.KeyValue;
 import org.apache.kafka.streams.StreamsBuilder;
@@ -23,7 +23,6 @@ public class TripMetricsApp {
     private static Logger log = LoggerFactory.getLogger(TripMetricsApp.class);
 
     public static void main(String[] args) {
-        log.info("Start..");
         TripMetricsConfig config = TripMetricsConfig.fromMap(System.getenv());
         Properties props = TripMetricsConfig.createConsumerProperties(config);
 
@@ -35,16 +34,13 @@ public class TripMetricsApp {
 
         KStream<Cell, Trip> source = builder.stream(config.getSourceTopic(), Consumed.with(cellSerde, tripSerde));
         KStream<Windowed<Cell>, DoublePair> windowed = source
-//                .filter((key, val) -> val.getTripTime() != 0 && val.getTripDistance() != 0)
-                .groupByKey(Serialized.with(cellSerde, tripSerde))
+                .groupByKey(Grouped.with(cellSerde, tripSerde))
                 .windowedBy(TimeWindows.of(TimeUnit.MINUTES.toMillis(15)))
                 .aggregate(
                         () -> new DoublePair((double) 0, (double) 0),
                         (key, value, profit) -> {
                             profit.setX(profit.getX() + 1);
                             profit.setY(profit.getY() + (value.getFareAmount() + value.getTipAmount()));
-//                            profit.setY(profit.getY() + (value.getTripDistance()));
-//                            profit.setY(profit.getY() + (value.getTripDistance()/(value.getTripTime()/3600)));
                             return profit;
                         },
                         Materialized.<Cell, DoublePair, WindowStore<Bytes, byte[]>>as("profit-store") /* state store name */
@@ -55,7 +51,6 @@ public class TripMetricsApp {
 
         KStream<Cell, Double> average = windowed
                 .map((window, pair) -> new KeyValue<>(window.key(), (double) Math.round(pair.getY()*100)/100));
-//                .map((cell, pair) -> new KeyValue<>(window.key(), (double) Math.round((pair.getY()/pair.getX())*100)/100));
 
         average.foreach((key, value) -> log.info("key: {}, val:{}", key, value));
 

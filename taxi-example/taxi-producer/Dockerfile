@@ -8,9 +8,8 @@ ENV JAVA_HOME /usr/lib/jvm/java
 ARG version=latest
 ENV VERSION ${version}
 
-COPY ./src/main/resources/sorteddata.csv /data/sorteddata.csv
 COPY ./scripts/ /bin
 
 ADD target/taxi-producer-1.0-SNAPSHOT.jar /
 
-CMD ["/bin/run.sh", "/taxi-producer-1.0-SNAPSHOT.jar", "/data/sorteddata.csv"]
+CMD ["/bin/run.sh", "/taxi-producer-1.0-SNAPSHOT.jar", "/sorteddata.csv"]

@@ -6,7 +6,7 @@ import io.strimzi.trip.Trip;
 import io.strimzi.trip.TripFields;
 import io.strimzi.json.JsonObjectSerde;
 import org.apache.kafka.common.serialization.Serdes;
-import org.apache.kafka.streams.Consumed;
+import org.apache.kafka.streams.kstream.Consumed;
 import org.apache.kafka.streams.KafkaStreams;
 import org.apache.kafka.streams.KeyValue;
 import org.apache.kafka.streams.StreamsBuilder;
@@ -28,8 +28,6 @@ public class TripConvertApp {
     private static final Logger log = LoggerFactory.getLogger(TripConvertApp.class);
     private static final Map<TripFields,Integer> fieldsMap = TaxiFieldsMap();
 
-//    private static final Location START_CELL_CENTRE = new Location(41.474937, -74.913585);
-//    private static final Location START_CELL_CENTRE = new Location(40.939117, -74.3602);
     private static final Location START_CELL_CENTRE = new Location(40.831164,-74.192491);
     private static final int CELL_SIZE_METRES = 500;
     private static final Double EARTH_RADIUS_METRES = 6371000.0;
@@ -97,13 +95,6 @@ public class TripConvertApp {
     private static Location startCellOrigin() {
         return new Location(START_CELL_CENTRE.getLatitude() + (CELL_LAT_LENGTH / 2),
                 START_CELL_CENTRE.getLongitude() - (CELL_LONG_LENGTH / 2));
-    }
-
-    public static Cell getPickupCellFromTrip(String csv) {
-        String[] elements = csv.split(",");
-        Location pickupLoc = new Location(Double.parseDouble(elements[fieldsMap.get(TripFields.PICKUP_LATITUDE)]),
-                                          Double.parseDouble(elements[fieldsMap.get(TripFields.PICKUP_LONGITUDE)]));
-        return new Cell(START_CELL_ORIGIN, CELL_LENGTH, pickupLoc);
     }
 
     public static Trip constructTripFromString(String csv) {

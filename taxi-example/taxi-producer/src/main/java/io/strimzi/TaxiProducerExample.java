@@ -1,15 +1,11 @@
 package io.strimzi;
 
-import io.vertx.core.Vertx;
-import io.vertx.kafka.client.producer.KafkaProducer;
-import io.vertx.kafka.client.producer.KafkaProducerRecord;
+import org.apache.kafka.clients.producer.KafkaProducer;
+import org.apache.kafka.clients.producer.ProducerRecord;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.io.BufferedReader;
-import java.io.FileNotFoundException;
-import java.io.FileReader;
-import java.io.IOException;
+import java.io.*;
 import java.util.Properties;
 
 public class TaxiProducerExample {
@@ -19,14 +15,13 @@ public class TaxiProducerExample {
         TaxiProducerConfig config = TaxiProducerConfig.fromMap(System.getenv());
         Properties props = TaxiProducerConfig.createProperties(config);
 
-        Vertx vertx = Vertx.vertx();
-
-        try (BufferedReader taxiIn = new BufferedReader(new FileReader(args[0]))) {
-            KafkaProducer<String,String> producer = KafkaProducer.create(vertx, props);
+        try (InputStream is = TaxiProducerExample.class.getResourceAsStream(args[0]);
+             BufferedReader taxiIn = new BufferedReader(new InputStreamReader(is))) {
+            KafkaProducer<String, String> producer = new KafkaProducer<>(props);
 
             log.info("Sending data ...");
             while (taxiIn.ready()) {
-                producer.write(KafkaProducerRecord.create(config.getTopic(), taxiIn.readLine()));
+                producer.send(new ProducerRecord<>(config.getTopic(), taxiIn.readLine()));
             }
 
             producer.close();
