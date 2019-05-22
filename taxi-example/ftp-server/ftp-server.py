@@ -8,10 +8,8 @@ PREFIX = '[%(levelname)1.1s %(asctime)s]'
 TIME_FORMAT = "%Y-%m-%d %H:%M:%S"
 FORMAT = PREFIX + ' %(message)s'
 
-#logging.basicConfig(level=logging.DEBUG, format=FORMAT)
-
-USER = "strimzi"
-PASS = "strimzi"
+USER = "amqstreams"
+PASS = "amqstreams"
 PATH = "./taxi-data"
 
 authorizer = DummyAuthorizer()
@@ -24,6 +22,3 @@ handler.permit_foreign_addresses = True
 
 server = FTPServer(("", 21), handler)
 server.serve_forever()
-
-
-
