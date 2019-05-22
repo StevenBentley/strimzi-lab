@@ -19,3 +19,6 @@ include::modules/basic-guide.adoc[]
 Building upon the basic example above, we will look at the design decisions and considerations while building an application to process a real-life data set.
 
 include::modules/taxi-guide.adoc[]
+
+== Tracing
+include::modules/tracing-guide.adoc[]

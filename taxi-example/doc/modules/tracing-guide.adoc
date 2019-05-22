@@ -1,0 +1,134 @@
+By instrumenting our application we can monitor the performance, and find out which parts could be causing a bottleneck in our stream processing system.
+Tracing can be exceptionally useful in distributed systems where it can be difficult to track messages and their progress to identify issues.
+
+We will be using the link:https://opentracing.io/[OpenTracing project] and one particular implementation of this, link:https://www.jaegertracing.io/[Jaeger].
+Jaeger works by defining different units of work called spans, and allows the propagation of the contextual information across service boundaries to encompass an entire trace of the work.
+
+We will use the Taxi Example application from the previous section to show how this is done.
+The instrumented source code can be found link:https://github.com/adam-cattermole/strimzi-lab/tree/taxi-jaeger-tracing[here].
+To avoid additional complexity, we will not discuss the instrumentation of the Kafka Connector within this document.
+
+=== Deploying Jaeger
+
+Jaeger has a Kubernetes operator for deploying instances of the Jaeger components as containerised applications.
+See the link:https://github.com/jaegertracing/jaeger-operator[instructions here] for a more detailed discussion.
+
+We need to deploy the Jaeger operator in the same namespace as the rest of our application, so make sure to adjust the namespaces appropriately in the YAML files when following the deployment instructions.
+Once the operator is up and running we can deploy a Jaeger instance.
+For the purposes of this documentation, the `simplest.yaml` Jaeger configuration is assumed to be used.
+
+=== Setting up a Trace
+
+The first step is configuring the tracer, which is most easily performed through the use of environment variables.
+As our application is containerised we can add the required values in the YAML configuration:
+
+[source,yaml,options="nowrap"]
+----
+...
+env:
+  - name: JAEGER_SERVICE_NAME
+    value: trip-consumer
+  - name: JAEGER_AGENT_HOST
+    value: simplest-agent
+  - name: JAEGER_AGENT_PORT
+    value: "6831"
+----
+
+Now we can define our tracer - we will use the `const` sampling strategy with parameter 1 to sample every single trace.
+See the link:https://www.jaegertracing.io/docs/1.11/sampling/[official website] for more information about sampling strategies.
+
+[source,java,options="nowrap"]
+----
+Tracer tracer = Configuration.fromEnv().withSampler(
+        new SamplerConfiguration()
+                .withType("const")
+                .withParam(1))
+        .getTracer();
+----
+
+We can now create our first unit of work, known as a link:https://opentracing.io/docs/overview/spans/[span].
+We use link:https://opentracing.io/guides/java/scopes/[scopes] to surround the currently active span and a try-with-resources block to ensure the scope is closed correctly.
+
+[source,java,options="nowrap"]
+----
+ Span span = tracer.buildSpan("hello.world").start();
+ try (Scope scope = tracer.scopeManager().activate(span)) {
+     span.log("Hello world");
+     System.out.println("Hello world");
+ } catch (Exception ex) {
+     Tags.ERROR.set(span, true);
+     Map<String, Object> map = new HashMap<>();
+     map.put(Fields.EVENT, "error");
+     map.put(Fields.ERROR_OBJECT, ex);
+     map.put(Fields.MESSAGE, ex.getMessage());
+     span.log(map);
+ } finally {
+     span.finish();
+ }
+----
+
+We use this very same method to create spans in the Taxi demo, see the link:{https://github.com/adam-cattermole/strimzi-lab/blob/taxi-jaeger-tracing/taxi-example/taxi-producer/src/main/java/io/strimzi/TaxiProducerExample.java}[TaxiProducerExample] code for details.
+
+Currently, we are creating traces from one of our applications, but we are not sending the span context information to applications downstream.
+This is where the link:https://github.com/opentracing-contrib/java-kafka-client/[OpenTracing Apache Kafka Client Instrumentation] library comes into play.
+The library provides two methods for instrumenting Kafka applications.
+
+. Using the wrapper class
+. Using the interceptor class
+
+The idea is that the library automatically handles the injection and extraction of span context information from the Kafka record headers, so that the user does not need to concern themselves with this.
+For the purposes of this example we will use the interceptor class (2) as it requires very few code changes to get functioning.
+The official Kafka Consumers and Producers provide a configuration option for defining an interceptor class, for the purpose of monitoring, and so we can update our config to include this option:
+
+[source,java,options="nowrap"]
+----
+props.put(ProducerConfig.INTERCEPTOR_CLASSES_CONFIG, TracingProducerInterceptor.class.getName());
+----
+
+Any messages sent through the producer will trigger a new span to be created, and the span context will be added to the record headers prior to sending.
+We could also create a new span encompassing any work we needed to do to produce the records, for example we may need to source the data from a file or socket.
+
+We can emulate this by creating a new span in our producer, and we will log a number for the message we are sending. This is as simple as adjusting the code we had before:
+
+[source,java,options="nowrap"]
+----
+log.info("Sending data ...");
+int i = 0;
+while (taxiIn.ready()) {
+    Span span = tracer.buildSpan("stream.message").start();
+    try (Scope scope = tracer.scopeManager().activate(span)) {
+        log.info("Send message {}", ++i);
+        span.log(String.format("Send message %d", i));
+        producer.send(new ProducerRecord<>(config.getTopic(), taxiIn.readLine()));
+    } catch (Exception ex) {
+        Tags.ERROR.set(span, true);
+        Map<String, Object> map = new HashMap<>();
+        map.put(Fields.EVENT, "error");
+        map.put(Fields.ERROR_OBJECT, ex);
+        map.put(Fields.MESSAGE, ex.getMessage());
+        span.log(map);
+    } finally {
+        span.finish();
+    }
+}
+----
+
+When the message arrives at the next part of the pipeline, the Consumer interceptor extract the span context from the record headers, and updates it with a new child span representing the read from the topic.
+If we would like to continue our trace within the body of our application we must do the same.
+The function `TracingKafkaUtils.extractSpanContext(..)` is provided for this purpose.
+An example of creating a child span from the incoming record is show below.
+
+[source,java,options="nowrap"]
+----
+SpanContext spanContext = TracingKafkaUtils.extractSpanContext(record.headers(), tracer);
+Span span = tracer.buildSpan("new.span").asChildOf(spanContext).start();
+----
+
+We can simply surround our logic in a scope as we saw before, and produce to a topic again.
+
+
+=== Drawbacks
+
+More fine-grained traces are difficult with the Kafka Streams DSL as we do not have direct access to the record headers.
+One of the workarounds is to use the lower-level link:https://kafka.apache.org/22/documentation/streams/developer-guide/processor-api.html[Kafka Streams Processor API], which requires considerably more boiler-plate for operations, but has additional power and customisability over the Kafka Streams DSL.
+Another alternative would be to define your applications with both a consumer and a producer, and handle all of the stream transformations yourself.

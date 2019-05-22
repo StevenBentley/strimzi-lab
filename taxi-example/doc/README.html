@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta http-equiv="X-UA-Compatible" content="IE=edge">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<meta name="generator" content="Asciidoctor 2.0.8">
+<meta name="generator" content="Asciidoctor 2.0.9">
 <meta name="author" content="Adam Cattermole">
 <title>Building a Kafka Streams Application</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Open+Sans:300,300italic,400,400italic,600,600italic%7CNoto+Serif:400,400italic,700,700italic%7CDroid+Sans+Mono:400,700">
@@ -461,6 +461,13 @@ body.book #toc,body.book #preamble,body.book h1.sect0,body.book .sect1>h2{page-b
 <li><a href="#_aggregation">Aggregation</a></li>
 <li><a href="#_consume_and_visualise">Consume and Visualise</a></li>
 <li><a href="#_system_architecture">System Architecture</a></li>
+</ul>
+</li>
+<li><a href="#_tracing">Tracing</a>
+<ul class="sectlevel2">
+<li><a href="#_deploying_jaeger">Deploying Jaeger</a></li>
+<li><a href="#_setting_up_a_trace">Setting up a Trace</a></li>
+<li><a href="#_drawbacks">Drawbacks</a></li>
 </ul>
 </li>
 </ul>
@@ -1141,10 +1148,175 @@ Each of the topics are labelled with the keys and values that they contain.</p>
 </div>
 </div>
 </div>
+<div class="sect1">
+<h2 id="_tracing">Tracing</h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>By instrumenting our application we can monitor the performance, and find out which parts could be causing a bottleneck in our stream processing system.
+Tracing can be exceptionally useful in distributed systems where it can be difficult to track messages and their progress to identify issues.</p>
+</div>
+<div class="paragraph">
+<p>We will be using the <a href="https://opentracing.io/">OpenTracing project</a> and one particular implementation of this, <a href="https://www.jaegertracing.io/">Jaeger</a>.
+Jaeger works by defining different units of work called spans, and allows the propagation of the contextual information across service boundaries to encompass an entire trace of the work.</p>
+</div>
+<div class="paragraph">
+<p>We will use the Taxi Example application from the previous section to show how this is done.
+The instrumented source code can be found <a href="https://github.com/adam-cattermole/strimzi-lab/tree/taxi-jaeger-tracing">here</a>.
+To avoid additional complexity, we will not discuss the instrumentation of the Kafka Connector within this document.</p>
+</div>
+<div class="sect2">
+<h3 id="_deploying_jaeger">Deploying Jaeger</h3>
+<div class="paragraph">
+<p>Jaeger has a Kubernetes operator for deploying instances of the Jaeger components as containerised applications.
+See the <a href="https://github.com/jaegertracing/jaeger-operator">instructions here</a> for a more detailed discussion.</p>
+</div>
+<div class="paragraph">
+<p>We need to deploy the Jaeger operator in the same namespace as the rest of our application, so make sure to adjust the namespaces appropriately in the YAML files when following the deployment instructions.
+Once the operator is up and running we can deploy a Jaeger instance.
+For the purposes of this documentation, the <code>simplest.yaml</code> Jaeger configuration is assumed to be used.</p>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_setting_up_a_trace">Setting up a Trace</h3>
+<div class="paragraph">
+<p>The first step is configuring the tracer, which is most easily performed through the use of environment variables.
+As our application is containerised we can add the required values in the YAML configuration:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="highlight nowrap"><code class="language-yaml" data-lang="yaml">...
+env:
+  - name: JAEGER_SERVICE_NAME
+    value: trip-consumer
+  - name: JAEGER_AGENT_HOST
+    value: simplest-agent
+  - name: JAEGER_AGENT_PORT
+    value: "6831"</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>Now we can define our tracer - we will use the <code>const</code> sampling strategy with parameter 1 to sample every single trace.
+See the <a href="https://www.jaegertracing.io/docs/1.11/sampling/">official website</a> for more information about sampling strategies.</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="highlight nowrap"><code class="language-java" data-lang="java">Tracer tracer = Configuration.fromEnv().withSampler(
+        new SamplerConfiguration()
+                .withType("const")
+                .withParam(1))
+        .getTracer();</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>We can now create our first unit of work, known as a <a href="https://opentracing.io/docs/overview/spans/">span</a>.
+We use <a href="https://opentracing.io/guides/java/scopes/">scopes</a> to surround the currently active span and a try-with-resources block to ensure the scope is closed correctly.</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="highlight nowrap"><code class="language-java" data-lang="java"> Span span = tracer.buildSpan("hello.world").start();
+ try (Scope scope = tracer.scopeManager().activate(span)) {
+     span.log("Hello world");
+     System.out.println("Hello world");
+ } catch (Exception ex) {
+     Tags.ERROR.set(span, true);
+     Map&lt;String, Object&gt; map = new HashMap&lt;&gt;();
+     map.put(Fields.EVENT, "error");
+     map.put(Fields.ERROR_OBJECT, ex);
+     map.put(Fields.MESSAGE, ex.getMessage());
+     span.log(map);
+ } finally {
+     span.finish();
+ }</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>We use this very same method to create spans in the Taxi demo, see the <a href="{https://github.com/adam-cattermole/strimzi-lab/blob/taxi-jaeger-tracing/taxi-example/taxi-producer/src/main/java/io/strimzi/TaxiProducerExample.java}">TaxiProducerExample</a> code for details.</p>
+</div>
+<div class="paragraph">
+<p>Currently, we are creating traces from one of our applications, but we are not sending the span context information to applications downstream.
+This is where the <a href="https://github.com/opentracing-contrib/java-kafka-client/">OpenTracing Apache Kafka Client Instrumentation</a> library comes into play.
+The library provides two methods for instrumenting Kafka applications.</p>
+</div>
+<div class="olist arabic">
+<ol class="arabic">
+<li>
+<p>Using the wrapper class</p>
+</li>
+<li>
+<p>Using the interceptor class</p>
+</li>
+</ol>
+</div>
+<div class="paragraph">
+<p>The idea is that the library automatically handles the injection and extraction of span context information from the Kafka record headers, so that the user does not need to concern themselves with this.
+For the purposes of this example we will use the interceptor class (2) as it requires very few code changes to get functioning.
+The official Kafka Consumers and Producers provide a configuration option for defining an interceptor class, for the purpose of monitoring, and so we can update our config to include this option:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="highlight nowrap"><code class="language-java" data-lang="java">props.put(ProducerConfig.INTERCEPTOR_CLASSES_CONFIG, TracingProducerInterceptor.class.getName());</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>Any messages sent through the producer will trigger a new span to be created, and the span context will be added to the record headers prior to sending.
+We could also create a new span encompassing any work we needed to do to produce the records, for example we may need to source the data from a file or socket.</p>
+</div>
+<div class="paragraph">
+<p>We can emulate this by creating a new span in our producer, and we will log a number for the message we are sending. This is as simple as adjusting the code we had before:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="highlight nowrap"><code class="language-java" data-lang="java">log.info("Sending data ...");
+int i = 0;
+while (taxiIn.ready()) {
+    Span span = tracer.buildSpan("stream.message").start();
+    try (Scope scope = tracer.scopeManager().activate(span)) {
+        log.info("Send message {}", ++i);
+        span.log(String.format("Send message %d", i));
+        producer.send(new ProducerRecord&lt;&gt;(config.getTopic(), taxiIn.readLine()));
+    } catch (Exception ex) {
+        Tags.ERROR.set(span, true);
+        Map&lt;String, Object&gt; map = new HashMap&lt;&gt;();
+        map.put(Fields.EVENT, "error");
+        map.put(Fields.ERROR_OBJECT, ex);
+        map.put(Fields.MESSAGE, ex.getMessage());
+        span.log(map);
+    } finally {
+        span.finish();
+    }
+}</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>When the message arrives at the next part of the pipeline, the Consumer interceptor extract the span context from the record headers, and updates it with a new child span representing the read from the topic.
+If we would like to continue our trace within the body of our application we must do the same.
+The function <code>TracingKafkaUtils.extractSpanContext(..)</code> is provided for this purpose.
+An example of creating a child span from the incoming record is show below.</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="highlight nowrap"><code class="language-java" data-lang="java">SpanContext spanContext = TracingKafkaUtils.extractSpanContext(record.headers(), tracer);
+Span span = tracer.buildSpan("new.span").asChildOf(spanContext).start();</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>We can simply surround our logic in a scope as we saw before, and produce to a topic again.</p>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_drawbacks">Drawbacks</h3>
+<div class="paragraph">
+<p>More fine-grained traces are difficult with the Kafka Streams DSL as we do not have direct access to the record headers.
+One of the workarounds is to use the lower-level <a href="https://kafka.apache.org/22/documentation/streams/developer-guide/processor-api.html">Kafka Streams Processor API</a>, which requires considerably more boiler-plate for operations, but has additional power and customisability over the Kafka Streams DSL.
+Another alternative would be to define your applications with both a consumer and a producer, and handle all of the stream transformations yourself.</p>
+</div>
+</div>
+</div>
+</div>
 </div>
 <div id="footer">
 <div id="footer-text">
-Last updated 2019-05-01 10:36:04 +0100
+Last updated 2019-05-22 10:21:03 +0100
 </div>
 </div>
 </body>
