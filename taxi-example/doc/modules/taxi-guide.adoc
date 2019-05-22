@@ -1,11 +1,34 @@
 :path-main: src/main/java/io/strimzi
-:url-taxi-connect: ../taxi-connect/{path-main}
-:url-trip-convert: ../trip-convert-app/{path-main}
-:url-trip-metrics: ../trip-metrics-app/{path-main}
-:url-trip-consumer: ../trip-consumer-app/{path-main}
-:url-entrypoint: https://github.com/adam-cattermole/strimzi-lab/tree/add-taxi-example/taxi-example
+:url-gh-root: https://github.com/adam-cattermole/strimzi-lab/tree/add-taxi-example/taxi-example
+:url-taxi-connect: {url-gh-root}/taxi-connect/{path-main}
+:url-taxi-producer: {url-gh-root}/taxi-producer/{path-main}
+:url-trip-convert: {url-gh-root}/trip-convert-app/{path-main}
+:url-trip-metrics: {url-gh-root}/trip-metrics-app/{path-main}
+:url-trip-consumer: {url-gh-root}/trip-consumer-app/{path-main}
 :url-strimzi-doc-master: https://strimzi.io/docs/master
+:url-amq-streams-doc-master: https://access.redhat.com/documentation/en-us/red_hat_amq/7.3/html/using_amq_streams_on_openshift_container_platform
 :url-gh-strimzi-ko-master: https://github.com/strimzi/strimzi-kafka-operator/blob/master
+:imagesdir: ../assets
+:markup-in-source: verbatim,quotes
+:sectanchors:
+:sectlinks:
+
+
+== Creating a Kafka Streams Application with AMQ Streams (Part 2)
+
+Opening statement on the blog post series that can be included with all parts
+
+. Basic
+. Taxi
+. Tracing
+
+In this part of the blog post series we discuss a more in-depth example that builds upon the starting point from Part 1.
+
+=== System Architecture
+
+We are going to build up a solution that follows the architecture diagram below, so it may be worth referring back to this for each new component.
+
+image::taxi-implementation.png[System Architecture,align="center"]
 
 === Dataset/Problem
 
@@ -48,145 +71,38 @@ The processing we have chosen for this example is relatively straightforward - w
 This involves splitting the input data into a grid of different cells, and summing the total amount of money taken for every journey that originates from any cell.
 To do this we have to consider splitting up processing in a way that ensures correctness of our output.
 
-We will build this example up step-by-step, starting with KafkaConnect and a custom built connector.
+We will build this example up step-by-step, building upon what we learned in Part 1 of this blog post series.
 
 
-=== Getting Data into the System
+=== Getting Data into Kafka
 
 First things first, we need to make our dataset accessible from the cluster.
-This would normally involve connecting to some service where we can poll the live data in real-time, but the data we have chosen is historical, and so we have to simulate the real-time behaviour.
+This would normally involve connecting to some service where we can poll the live data in real-time, but the data we have chosen is historical, and so we have to emulate the real-time behaviour.
 
-The example connector we have built relies on hosting the file on an FTP server.
-We picked this method as it allows our connector to easily communicate with a file external to the cluster.
-For convenience, we use a python library `pyftpdlib` to host the file with the username and password set to `strimzi`.
-For instructions on running the FTP server see link:{url-entrypoint}#running-the-python-ftp-server[Running the Python FTP server].
-
-Before we continue, lets check that we can connect from the cluster to the FTP server running on our host, by deploying a simple container. You should see something similar to the output below
-
-[source,bash,options="nowrap",subs="{markup-in-source},replacements"]
-----
-$ kubectl run test-ftp -ti --generator=run-pod/v1 --image=centos:latest --rm=true -n kafka \-- /bin/bash
-
-_If you don\'t see a command prompt, try pressing enter._
-
-$ yum install -y ftp
-
-_\...
-Installed:
-  ftp.x86_64 0:0.17-67.el7
-
-Complete!_
-
-$ ftp -pvn <ip-address>
-
-_Connected to <ip-address> (<ip-address>).
-220 pyftpdlib 1.5.5 ready.
-Remote system type is UNIX.
-Using binary mode to transfer files._
-
-$ ftp> user strimzi strimzi
-
-_331 Username ok, send password.
-230 Login successful._
-----
-
-A Kafka Connector consists of both itself, and tasks (or workers) that perform the retrieval of the data through the `poll()` function.
-The connector passes configuration over to the workers, and several workers can be invoked as per the `tasks.max` parameter.
-We have created an link:{url-taxi-connect}/util/FTPConnection.java[FTPConnection] class, which provides the functions we require from the Apache Commons link:https://commons.apache.org/proper/commons-net/apidocs/org/apache/commons/net/ftp/FTPClient.html[FTPClient].
-On each call to `poll()` we retrieve the next line from the file, and publish this record to the topic provided in the configuration.
-
-We need to add our connector plugin to the existing link:https://hub.docker.com/r/strimzi/kafka-connect[strimzi/kafka-connect] docker image, which is done by adding the JAR to the plugins folder, as described in the link:{url-strimzi-doc-master}/#creating-new-image-from-base-str[Strimzi documentation].
-We can then deploy the Kafka Connect cluster, using the configuration from the link:{url-gh-strimzi-ko-master}/examples/kafka-connect/kafka-connect.yaml[existing KafkaConnect example], but adding the `spec.image` field to point to the image containing our plugin.
-
-KafkaConnect is exposed as a RESTful resource, and so to check which connector plugins are present we can run the following `GET` request:
-
-[source,bash,options="nowrap",subs="{markup-in-source}"]
-----
-$ kubectl exec -c kafka -i my-cluster-kafka-0 -n kafka -- curl -s -X GET \
-    http://my-connect-cluster-connect-api:8083/connector-plugins
-
-_[{"class":"io.strimzi.TaxiSourceConnector","type":"source","version":"1.0-SNAPSHOT"},{"class":"org.apache.kafka.connect.file.FileStreamSinkConnector","type":"sink","version":"2.1.0"},{"class":"org.apache.kafka.connect.file.FileStreamSourceConnector","type":"source","version":"2.1.0"}]_
-
-----
-
-Similarly, to create a new connector we can `POST` the `JSON` configuration, as shown in the example below.
-This new connector instance will establish an FTP connection to the server, and stream the data to the `taxi-source-topic`.
-For this to work correctly, the following configuration options must be set correctly.
-
-* `connect.ftp.address` - FTP connection URL host:port.
-
-* `connect.ftp.filepath` - Path to file on remote FTP server (from root).
-
-Optional configuration:
-
-* `connect.ftp.attempts` - Maximum number of attempts to retrieve a valid FTP connection. (default: 3)
-
-* `connect.ftp.backoff.ms` - Backoff time in milliseconds between connection attempts. (default: 10000ms)
-
-[source,bash,options="nowrap",subs="{markup-in-source}"]
-----
-$ kubectl exec -c kafka -i my-cluster-kafka-0 -n kafka -- curl -s -X POST \
-    -H "Accept:application/json" \
-    -H "Content-Type:application/json" \
-    http://my-connect-cluster-connect-api:8083/connectors -d @- <<'EOF'
-
-{
-    "name": "taxi-connector",
-    "config": {
-        "connector.class": "io.strimzi.TaxiSourceConnector",
-        "connect.ftp.address": "<ip-address>",
-        "connect.ftp.user": "strimzi",
-        "connect.ftp.password": "strimzi",
-        "connect.ftp.filepath": "sorteddata.csv",
-        "connect.ftp.topic": "taxi-source-topic",
-        "tasks.max": "1",
-        "value.converter": "org.apache.kafka.connect.storage.StringConverter"
-    }
-}
-EOF
-
-_{"name":"taxi-connector","config":{"connector.class":"io.strimzi.TaxiSourceConnector","connect.ftp.address":"10.56.222.49","connect.ftp.user":"strimzi","connect.ftp.password":"strimzi","connect.ftp.filepath":"sorteddata.csv","connect.ftp.topic":"taxi-source-topic","tasks.max":"1","value.converter":"org.apache.kafka.connect.storage.StringConverter","name":"taxi-connector"},"tasks":[],"type":null}_
-----
-
-We can `GET` the current deployed connectors:
-
-[source,bash,options="nowrap",subs="{markup-in-source}"]
-----
-$ kubectl exec -c kafka -i my-cluster-kafka-0 -n kafka -- curl -s -X GET \
-    http://my-connect-cluster-connect-api:8083/connectors
-
-_["taxi-connector"]_
-----
+Kafka Connector's are ideal for this sort of function, and are exactly what we are going to use.
+However, we will avoid all the additional complexity of Kafka Connect for the time being, and use a KafkaProducer application in the same way as discussed in Part 1 of this blog post series.
+This is done by simply including the (smaller) data file in the JAR, and reading line-by-line to send to Kafka.
+See link:{url-taxi-producer}/TaxiProducerExample.java[TaxiProducerExample] for an example of how this works.
+We set the `TOPIC` to write the data to as `taxi-source-topic` in the deployment configuration.
 
 Lets check that the data is streaming to the topic:
 
 [source,bash,options="nowrap",subs="{markup-in-source},replacements"]
 ----
-$ kubectl run kafka-consumer -ti --image=strimzi/kafka:0.11.1-kafka-2.1.0 --rm=true --restart=Never -n kafka \-- bin/kafka-console-consumer.sh --bootstrap-server my-cluster-kafka-bootstrap:9092 --topic taxi-source-topic --from-beginning
+$ oc run kafka-consumer -ti --image=registry.access.redhat.com/amq7/amq-streams-kafka:1.1.0-kafka-2.1.1 --rm=true --restart=Never \-- bin/kafka-console-consumer.sh --bootstrap-server my-cluster-kafka-bootstrap:9092 --topic taxi-source-topic --from-beginning
 
-_If you don\'t see a command prompt, try pressing enter.
-OpenJDK 64-Bit Server VM warning: If the number of processors is expected to increase from one, then you should configure the number of parallel GC threads appropriately using -XX:ParallelGCThreads=N
-07290D3599E7A0D62097A346EFCC1FB5,E7750A37CAB07D0DFF0AF7E3573AC141,2013-01-01 00:00:00,2013-01-01 00:02:00,120,0.44,-73.956528,40.716976,-73.962440,40.715008,CSH,3.50,0.50,0.50,0.00,0.00,4.50
+_07290D3599E7A0D62097A346EFCC1FB5,E7750A37CAB07D0DFF0AF7E3573AC141,2013-01-01 00:00:00,2013-01-01 00:02:00,120,0.44,-73.956528,40.716976,-73.962440,40.715008,CSH,3.50,0.50,0.50,0.00,0.00,4.50
 22D70BF00EEB0ADC83BA8177BB861991,3FF2709163DE7036FCAA4E5A3324E4BF,2013-01-01 00:02:00,2013-01-01 00:02:00,0,0.00,0.000000,0.000000,0.000000,0.000000,CSH,27.00,0.00,0.50,0.00,0.00,27.50
 0EC22AAF491A8BD91F279350C2B010FD,778C92B26AE78A9EBDF96B49C67E4007,2013-01-01 00:01:00,2013-01-01 00:03:00,120,0.71,-73.973145,40.752827,-73.965897,40.760445,CSH,4.00,0.50,0.50,0.00,0.00,5.00
 \..._
 ----
 
-For debugging information, see the logs of `my-connect-cluster-connect`.
-
-While we work on the rest of the application we can stop the plugin:
-
-[source,bash,options="nowrap"]
-----
-$ kubectl exec -c kafka -i my-cluster-kafka-0 -n kafka -- curl -s -X DELETE \
-    http://my-connect-cluster-connect-api:8083/connectors/taxi-connector
-----
 
 === Kafka Streams Operations on the Data
 
 Now that we have a topic with the `String` data we can start creating our application logic.
 First up lets set up the configuration options for the Kafka streams application.
-We do this in a separate config class, see link:{url-trip-convert}/TripConvertConfig.java[TripConvertConfig], which still uses the same method of reading from environment variables, as described in the initial example.
+We do this in a separate config class, see link:{url-trip-convert}/TripConvertConfig.java[TripConvertConfig], which still uses the same method of reading from environment variables, as described in Part 1 of this blog post series.
 It should be noted that this same method of providing configuration is used for each new application we build.
 
 We can now generate the configuration options:
@@ -331,9 +247,91 @@ image::dashboard.png[Screenshot of Dashboard,align="center"]
 By modifying the starting latitude and longitude, or the cell size (in both link:../trip-consumer-app/src/main/resources/webroot/index.html[index.html] and link:{url-trip-convert}/TripConvertApp.java[TripConvertApp]) you can change the grid that is being worked with.
 You can also adjust the logic in the aggregate function to calculate some alternative metric from the data.
 
-=== System Architecture
+=== Creating a Kafka Connector
 
-The application that we have built is detailed in the architecture diagram below.
-Each of the topics are labelled with the keys and values that they contain.
+Up until now the producer we are using has been sufficient, even though the JAR (and image) are more bloated due to the additional data file.
+However if we wanted to process the full 12GB dataset, this would not be an ideal solution.
 
-image::taxi-implementation.png[System Architecture,align="center"]
+The example connector we have built relies on hosting the file on an FTP server, but it should be noted that there are existing connectors for several different file stores.
+We picked an FTP server as it allows our connector to easily communicate with a file external to the cluster.
+For convenience, we use a python library `pyftpdlib` to host the file with the username and password set to `amqstreams`. However, hosting the file on any publicly accessible FTP server is sufficient.
+
+A Kafka Connector consists of both itself, and tasks (also known as workers) that perform the retrieval of the data through calls to the `poll()` function.
+The connector passes configuration over to the workers, and several workers can be invoked as per the `tasks.max` parameter.
+We have created an link:{url-taxi-connect}/util/FTPConnection.java[FTPConnection] class, which provides the functions we require from the Apache Commons link:https://commons.apache.org/proper/commons-net/apidocs/org/apache/commons/net/ftp/FTPClient.html[FTPClient].
+On each call to `poll()` we retrieve the next line from the file, and publish this record to the topic provided in the configuration.
+
+We need to add our connector plugin to the existing `amq-streams-kafka-connect` docker image, which is done by adding the JAR to the plugins folder, as described in the link:{url-amq-streams-doc-master}/getting-started-str#using-kafka-connect-with-plug-ins-str[AMQ Streams documentation].
+We can then deploy the Kafka Connect cluster, using the instructions from the link:{url-amq-streams-doc-master}/getting-started-str#deploying-kafka-connect-openshift-str[default KafkaConnect example], but adding the `spec.image` field to our `kafka-connect.yaml`, pointing to the image containing our plugin.
+
+KafkaConnect is exposed as a RESTful resource, and so to check which connector plugins are present we can run the following `GET` request:
+
+[source,bash,options="nowrap",subs="{markup-in-source}"]
+----
+$ oc exec -c kafka -i my-cluster-kafka-0 -- curl -s -X GET \
+    http://my-connect-cluster-connect-api:8083/connector-plugins
+
+_[{"class":"io.strimzi.TaxiSourceConnector","type":"source","version":"1.0-SNAPSHOT"},{"class":"org.apache.kafka.connect.file.FileStreamSinkConnector","type":"sink","version":"2.1.0"},{"class":"org.apache.kafka.connect.file.FileStreamSourceConnector","type":"source","version":"2.1.0"}]_
+
+----
+
+Similarly, to create a new connector we can `POST` the `JSON` configuration, as shown in the example below.
+This new connector instance will establish an FTP connection to the server, and stream the data to the `taxi-source-topic`.
+For this to work correctly, the following configuration options must be set correctly.
+
+* `connect.ftp.address` - FTP connection URL host:port.
+
+* `connect.ftp.filepath` - Path to file on remote FTP server (from root).
+
+Optional configuration:
+
+* `connect.ftp.attempts` - Maximum number of attempts to retrieve a valid FTP connection. (default: 3)
+
+* `connect.ftp.backoff.ms` - Backoff time in milliseconds between connection attempts. (default: 10000ms)
+
+[source,bash,options="nowrap",subs="{markup-in-source}"]
+----
+$ oc exec -c kafka -i my-cluster-kafka-0 -- curl -s -X POST \
+    -H "Accept:application/json" \
+    -H "Content-Type:application/json" \
+    http://my-connect-cluster-connect-api:8083/connectors -d @- <<'EOF'
+
+{
+    "name": "taxi-connector",
+    "config": {
+        "connector.class": "io.strimzi.TaxiSourceConnector",
+        "connect.ftp.address": "<ip-address>",
+        "connect.ftp.user": "amqstreams",
+        "connect.ftp.password": "amqstreams",
+        "connect.ftp.filepath": "sorteddata.csv",
+        "connect.ftp.topic": "taxi-source-topic",
+        "tasks.max": "1",
+        "value.converter": "org.apache.kafka.connect.storage.StringConverter"
+    }
+}
+EOF
+
+_{"name":"taxi-connector","config":{"connector.class":"io.strimzi.TaxiSourceConnector","connect.ftp.address":"10.56.222.49","connect.ftp.user":"amqstreams","connect.ftp.password":"amqstreams","connect.ftp.filepath":"sorteddata.csv","connect.ftp.topic":"taxi-source-topic","tasks.max":"1","value.converter":"org.apache.kafka.connect.storage.StringConverter","name":"taxi-connector"},"tasks":[],"type":null}_
+----
+
+We can `GET` the current deployed connectors:
+
+[source,bash,options="nowrap",subs="{markup-in-source}"]
+----
+$ oc exec -c kafka -i my-cluster-kafka-0 -- curl -s -X GET \
+    http://my-connect-cluster-connect-api:8083/connectors
+
+_["taxi-connector"]_
+----
+
+We can check if the data is streaming to the topic in the same way as we did in section link:#_getting_data_into_kafka[Getting Data into Kafka].
+For debugging information, see the logs of `my-connect-cluster-connect`.
+To stop the plugin we can delete it with the following command.
+
+[source,bash,options="nowrap"]
+----
+$ oc exec -c kafka -i my-cluster-kafka-0 -- curl -s -X DELETE \
+    http://my-connect-cluster-connect-api:8083/connectors/taxi-connector
+----
+
+That's it. We have managed to create a more complex streams application, where we source (historical) real-world data with a Kafka Connector, stream it through multiple processing points, and sink it to a visualisation.

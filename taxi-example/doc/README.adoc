@@ -6,7 +6,7 @@ Adam Cattermole
 :markup-in-source: verbatim,quotes
 
 Within this article we describe the steps required to get started with
-building your own Kafka Streams application using Strimzi. We start
+building your own Kafka Streams application using AMQ Streams. We start
 with a simple example and build upon it to create a multi-stage
 pipeline, performing some operations on the data stream, and visualising
 at the consumer.

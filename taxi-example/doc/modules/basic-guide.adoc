@@ -1,6 +1,6 @@
-=== Strimzi Setup
+=== AMQ Streams Setup
 
-First things first, follow the instructions in the https://strimzi.io/quickstarts/[Strimzi quickstart documentation] to get a Kafka cluster deployed.
+First things first, follow the instructions in the https://access.redhat.com/documentation/en-us/red_hat_amq/7.3/html/using_amq_streams_on_openshift_container_platform/getting-started-str[AMQ Streams getting started documentation] to get a Kafka cluster deployed.
 All of the subsequent parts of this documentation assume you have followed these steps.
 
 === Create a Producer
@@ -11,7 +11,7 @@ This could come from a variety of different sources, but for the purposes of thi
 We need to configure the Kafka Producer so that it knows how to talk to the
 Kafka brokers (see link:https://strimzi.io/2019/04/17/accessing-kafka-part-1.html[this article] for a more in-depth explanation of how this works), as well as provide information such as the topic name to write to.
 As our application will be containerised, we can abstract this away from the producer code, and read it from environment variables.
-This could be done in an external configuration file, but for this simple example the following will be sufficient.
+This could be done in a separate configuration class, but for this simple example the following will be sufficient.
 
 [source,java,options="nowrap"]
 ----
@@ -31,7 +31,7 @@ String topic = System.getenv().getOrDefault(TOPIC, DEFAULT_TOPIC);
 ----
 
 We can now create appropriate properties for our Kafka Producer using the
-environment variables (or the defaults).
+environment variables (or the defaults we set).
 
 [source,java,options="nowrap"]
 ----
@@ -102,12 +102,12 @@ We can check that data is arriving at our topic by consuming from it:
 
 [source,bash,options="nowrap",subs="{markup-in-source}"]
 ----
-$ kubectl run kafka-consumer -n kafka -ti --image=strimzi/kafka:0.11.1-kafka-2.1.0 --rm=true --restart=Never -- bin/kafka-console-consumer.sh --bootstrap-server my-cluster-kafka-bootstrap:9092 --topic source-topic --from-beginning
+$ oc run kafka-consumer -ti --image=registry.access.redhat.com/amq7/amq-streams-kafka:1.1.0-kafka-2.1.1 --rm=true --restart=Never -- bin/kafka-console-consumer.sh --bootstrap-server my-cluster-kafka-bootstrap:9092 --topic source-topic --from-beginning
 
 _hello world 0
 hello world 1
 hello world 2
-..._
+\..._
 ----
 
 === Create a Streams App
@@ -115,7 +115,7 @@ hello world 2
 A Kafka Streams application will typically read/source data from one or more input topics, and write/send data to one or more output topics, acting as a stream processor.
 We can setup the properties and configuration in the same way as before, but this time we need to specify a `SOURCE_TOPIC` and `SINK_TOPIC`.
 
-Let us create the `source` stream:
+To start we can create the `source` stream:
 
 [source,java,options="nowrap"]
 ----
@@ -141,7 +141,7 @@ This can then be output to the `sinkTopic`:
 filtered.to(sinkTopic);
 ----
 
-Lastly we can create the streams object and create a shutdown handler.
+We have created the topology that defines the operations of our stream application, but do not have it running yet. This requires creating the streams object, setting up a shutdown handler, and starting the stream.
 
 [source,java,options="nowrap"]
 ----
@@ -167,4 +167,4 @@ System.exit(0);
 ----
 
 It is as simple as this to get our streams application running.
-Build the application into a docker image and deploy in a similar way to the producer, and you can watch the `sinkTopic` for the output!
+Build the application into a docker image and deploy in a similar way to the producer, and you can watch the `SINK_TOPIC` for the output!

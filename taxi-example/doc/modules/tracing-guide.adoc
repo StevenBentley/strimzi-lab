@@ -1,3 +1,7 @@
+:path-main: src/main/java/io/strimzi
+:url-gh-root: https://github.com/adam-cattermole/strimzi-lab/tree/add-taxi-example/taxi-example
+:url-taxi-producer: {url-gh-root}/taxi-producer/{path-main}
+
 By instrumenting our application we can monitor the performance, and find out which parts could be causing a bottleneck in our stream processing system.
 Tracing can be exceptionally useful in distributed systems where it can be difficult to track messages and their progress to identify issues.
 
@@ -67,7 +71,7 @@ We use link:https://opentracing.io/guides/java/scopes/[scopes] to surround the c
  }
 ----
 
-We use this very same method to create spans in the Taxi demo, see the link:{https://github.com/adam-cattermole/strimzi-lab/blob/taxi-jaeger-tracing/taxi-example/taxi-producer/src/main/java/io/strimzi/TaxiProducerExample.java}[TaxiProducerExample] code for details.
+We use this very same method to create spans in the Taxi demo, see the link:{url-taxi-producer}/TaxiProducerExample.java[TaxiProducerExample] code for details.
 
 Currently, we are creating traces from one of our applications, but we are not sending the span context information to applications downstream.
 This is where the link:https://github.com/opentracing-contrib/java-kafka-client/[OpenTracing Apache Kafka Client Instrumentation] library comes into play.
@@ -113,7 +117,7 @@ while (taxiIn.ready()) {
 }
 ----
 
-When the message arrives at the next part of the pipeline, the Consumer interceptor extract the span context from the record headers, and updates it with a new child span representing the read from the topic.
+When the message arrives at the next part of the pipeline, the Consumer interceptor extracts the span context from the record headers, and updates it with a new child span representing the read from the topic.
 If we would like to continue our trace within the body of our application we must do the same.
 The function `TracingKafkaUtils.extractSpanContext(..)` is provided for this purpose.
 An example of creating a child span from the incoming record is show below.
@@ -124,11 +128,11 @@ SpanContext spanContext = TracingKafkaUtils.extractSpanContext(record.headers(),
 Span span = tracer.buildSpan("new.span").asChildOf(spanContext).start();
 ----
 
-We can simply surround our logic in a scope as we saw before, and produce to a topic again.
+We can simply surround our logic in a scope as we saw before, and produce to the next topic again.
 
 
 === Drawbacks
 
 More fine-grained traces are difficult with the Kafka Streams DSL as we do not have direct access to the record headers.
 One of the workarounds is to use the lower-level link:https://kafka.apache.org/22/documentation/streams/developer-guide/processor-api.html[Kafka Streams Processor API], which requires considerably more boiler-plate for operations, but has additional power and customisability over the Kafka Streams DSL.
-Another alternative would be to define your applications with both a consumer and a producer, and handle all of the stream transformations yourself.
+Another alternative would be to define each of your applications with both a consumer and a producer, and handle all of the stream transformations yourself.
