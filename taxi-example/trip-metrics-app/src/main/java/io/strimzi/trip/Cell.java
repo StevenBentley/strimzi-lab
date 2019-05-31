@@ -18,7 +18,7 @@ public class Cell implements Serializable {
     }
 
     public Cell(Location origin, Location sideLength, Location l) {
-        this.clat  = (int) Math.floor((Math.abs(origin.getLatitude() - l.getLatitude()) / sideLength.getLatitude()) + 1);
+        this.clat  = (int) Math.floor(((origin.getLatitude() - l.getLatitude()) / sideLength.getLatitude()) + 1);
         this.clong = (int) Math.floor((Math.abs(l.getLongitude() - origin.getLongitude()) / sideLength.getLongitude()) + 1);
     }
 
@@ -30,8 +30,12 @@ public class Cell implements Serializable {
         return clong;
     }
 
+    public boolean inBounds(int minClat, int minClong, int maxClat, int maxClong) {
+        return (this.clat >= minClat && this.clong >= minClong) && (this.clat <= maxClat && this.clong <= maxClong);
+    }
+
     public boolean inBounds(int maxClat, int maxClong) {
-        return this.clat <= maxClat && this.clong <= maxClong;
+        return inBounds(1,1, maxClat, maxClong);
     }
 
     @Override
